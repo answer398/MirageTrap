@@ -1,0 +1,14 @@
+.git/
+.gitignore
+
+**/__pycache__/
+**/*.pyc
+
+backend/.venv/
+backend/.pytest_cache/
+backend/tests/
+backend/instance/
+
+migrations_dev.db
+
+docs/

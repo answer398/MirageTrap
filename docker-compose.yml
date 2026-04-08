@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: honeypot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: honeypot_db
+      POSTGRES_USER: honeypot
+      POSTGRES_PASSWORD: honeypot
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honeypot -d honeypot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: honeypot-backend-api
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      APP_PORT: ${APP_PORT:-15000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://127.0.0.1:15173,http://localhost:15173}
+      SECRET_KEY: ${SECRET_KEY:-replace-with-random-secret}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-replace-with-random-jwt-secret}
+      DATABASE_URL: postgresql+psycopg2://honeypot:honeypot@postgres:5432/honeypot_db
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
+      INGEST_TOKEN: ${INGEST_TOKEN:-dev-ingest-token}
+      SESSION_AGGREGATION_MINUTES: ${SESSION_AGGREGATION_MINUTES:-30}
+      EVIDENCE_STORAGE_DRIVER: ${EVIDENCE_STORAGE_DRIVER:-local}
+      EVIDENCE_LOCAL_PATH: ${EVIDENCE_LOCAL_PATH:-instance/evidence}
+      ADMIN_DEFAULT_USERNAME: ${ADMIN_DEFAULT_USERNAME:-admin}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-Admin@123456}
+      AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-false}
+      HONEYPOT_CONTROL_TOKEN: ${HONEYPOT_CONTROL_TOKEN:-dev-ingest-token}
+      HONEYPOT_ORCHESTRATION_ENABLED: ${HONEYPOT_ORCHESTRATION_ENABLED:-true}
+      HONEYPOT_CONTROLLER_BASE_URL: ${HONEYPOT_CONTROLLER_BASE_URL:-http://backend-api:15000}
+      HONEYPOT_DOCKER_NETWORK: ${HONEYPOT_DOCKER_NETWORK:-miragetrap-net}
+      HONEYPOT_HEARTBEAT_INTERVAL_SECONDS: ${HONEYPOT_HEARTBEAT_INTERVAL_SECONDS:-15}
+      HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS: ${HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS:-45}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${HOST_APP_PORT:-15000}:15000"
+    volumes:
+      - backend_evidence_data:/app/instance/evidence
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:15000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  honeypot-web:
+    image: miragetrap/web-honeypot:latest
+    build:
+      context: .
+      dockerfile: honeypots/web/Dockerfile
+    container_name: honeypot-web
+    restart: unless-stopped
+    environment:
+      WEB_HONEYPOT_PORT: 80
+      INGEST_API_URL: http://backend-api:15000/api/ingest/events
+      HEARTBEAT_API_URL: http://backend-api:15000/api/honeypots/heartbeat
+      INGEST_TOKEN: ${INGEST_TOKEN:-dev-ingest-token}
+      HONEYPOT_CONTROL_TOKEN: ${HONEYPOT_CONTROL_TOKEN:-dev-ingest-token}
+      HONEYPOT_ID: ${WEB_HONEYPOT_ID:-hp-web-compose-001}
+      HONEYPOT_NAME: ${WEB_HONEYPOT_NAME:-web-bootstrap}
+      HONEYPOT_IMAGE_KEY: ${WEB_HONEYPOT_IMAGE_KEY:-web_portal}
+      HONEYPOT_IMAGE_NAME: ${WEB_HONEYPOT_IMAGE_NAME:-miragetrap/web-honeypot:latest}
+      HONEYPOT_CONTAINER_NAME: ${WEB_HONEYPOT_CONTAINER_NAME:-honeypot-web}
+      HONEYPOT_PROFILE: ${WEB_HONEYPOT_PROFILE:-portal}
+      HONEYPOT_EXPOSED_PORT: ${WEB_HONEYPOT_EXPOSED_PORT:-18080}
+      HEARTBEAT_INTERVAL_SECONDS: ${HONEYPOT_HEARTBEAT_INTERVAL_SECONDS:-15}
+      WEB_HONEYPOT_MAX_BODY: ${WEB_HONEYPOT_MAX_BODY:-4096}
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    ports:
+      - "${HOST_WEB_HONEYPOT_PORT:-18080}:80"
+
+volumes:
+  postgres_data:
+  backend_evidence_data:
+
+networks:
+  default:
+    name: miragetrap-net
