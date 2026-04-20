@@ -7,6 +7,8 @@ from app.models.attack_event import AttackEvent
 
 
 class AttackEventRepository:
+    _NORMAL_EVENT_TYPE = "web_req"
+
     def create(self, **kwargs) -> AttackEvent:
         item = AttackEvent(**kwargs)
         db.session.add(item)
@@ -57,40 +59,46 @@ class AttackEventRepository:
             "pages": pagination.pages,
         }
 
-    def count_total_since(self, start_time: datetime) -> int:
-        return AttackEvent.query.filter(AttackEvent.created_at >= start_time).count()
+    def count_total_since(self, start_time: datetime, *, attack_only: bool = False) -> int:
+        query = AttackEvent.query.filter(AttackEvent.created_at >= start_time)
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.count()
 
-    def count_unique_ip_since(self, start_time: datetime) -> int:
-        return (
-            db.session.query(func.count(func.distinct(AttackEvent.source_ip)))
-            .filter(AttackEvent.created_at >= start_time)
-            .scalar()
-            or 0
+    def count_unique_ip_since(self, start_time: datetime, *, attack_only: bool = False) -> int:
+        query = db.session.query(func.count(func.distinct(AttackEvent.source_ip))).filter(
+            AttackEvent.created_at >= start_time
         )
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.scalar() or 0
 
-    def count_by_honeypot_since(self, start_time: datetime, honeypot_type: str) -> int:
-        return (
-            AttackEvent.query.filter(
-                AttackEvent.created_at >= start_time,
-                AttackEvent.honeypot_type == honeypot_type,
-            ).count()
+    def count_by_honeypot_since(
+        self,
+        start_time: datetime,
+        honeypot_type: str,
+        *,
+        attack_only: bool = False,
+    ) -> int:
+        query = AttackEvent.query.filter(
+            AttackEvent.created_at >= start_time,
+            AttackEvent.honeypot_type == honeypot_type,
         )
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.count()
 
-    def count_high_risk_since(self, start_time: datetime) -> int:
-        return (
-            AttackEvent.query.filter(
-                AttackEvent.created_at >= start_time,
-                AttackEvent.risk_level.in_(["high", "critical"]),
-            ).count()
+    def count_high_risk_since(self, start_time: datetime, *, attack_only: bool = False) -> int:
+        query = AttackEvent.query.filter(
+            AttackEvent.created_at >= start_time,
+            AttackEvent.risk_level.in_(["high", "critical"]),
         )
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.count()
 
-    def count_attack_types_since(self, start_time: datetime) -> int:
-        return (
-            db.session.query(func.count(func.distinct(AttackEvent.event_type)))
-            .filter(AttackEvent.created_at >= start_time)
-            .scalar()
-            or 0
+    def count_attack_types_since(self, start_time: datetime, *, attack_only: bool = False) -> int:
+        query = db.session.query(func.count(func.distinct(AttackEvent.event_type))).filter(
+            AttackEvent.created_at >= start_time
         )
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.scalar() or 0
 
     def list_by_session(self, session_id: str) -> list[AttackEvent]:
         return (
@@ -107,32 +115,53 @@ class AttackEventRepository:
             .all()
         )
 
-    def list_since(self, start_time: datetime, limit: int = 1000) -> list[AttackEvent]:
-        return (
-            AttackEvent.query.filter(AttackEvent.created_at >= start_time)
-            .order_by(AttackEvent.created_at.asc(), AttackEvent.id.asc())
-            .limit(limit)
-            .all()
-        )
+    def list_since(
+        self,
+        start_time: datetime,
+        limit: int = 1000,
+        *,
+        attack_only: bool = False,
+    ) -> list[AttackEvent]:
+        query = AttackEvent.query.filter(AttackEvent.created_at >= start_time)
+        query = self._apply_attack_only(query, attack_only=attack_only)
+        return query.order_by(AttackEvent.created_at.asc(), AttackEvent.id.asc()).limit(limit).all()
 
-    def top_map_regions(self, *, start_time: datetime, limit: int = 20) -> list[dict]:
+    def top_map_regions(
+        self,
+        *,
+        start_time: datetime,
+        limit: int = 20,
+        attack_only: bool = False,
+    ) -> list[dict]:
         high_risk_case = case(
             (AttackEvent.risk_level.in_(["high", "critical"]), 1),
             else_=0,
         )
 
+        query = db.session.query(
+            AttackEvent.country,
+            AttackEvent.country_code,
+            AttackEvent.region,
+            AttackEvent.region_code,
+            AttackEvent.city,
+            AttackEvent.latitude,
+            AttackEvent.longitude,
+            func.count(AttackEvent.id).label("attack_count"),
+            func.count(func.distinct(AttackEvent.source_ip)).label("unique_ip_count"),
+            func.sum(high_risk_case).label("high_risk_count"),
+            func.max(AttackEvent.created_at).label("latest_attack_at"),
+        ).filter(AttackEvent.created_at >= start_time)
+        query = self._apply_attack_only(query, attack_only=attack_only)
         rows = (
-            db.session.query(
+            query.group_by(
                 AttackEvent.country,
+                AttackEvent.country_code,
                 AttackEvent.region,
+                AttackEvent.region_code,
                 AttackEvent.city,
-                func.count(AttackEvent.id).label("attack_count"),
-                func.count(func.distinct(AttackEvent.source_ip)).label("unique_ip_count"),
-                func.sum(high_risk_case).label("high_risk_count"),
-                func.max(AttackEvent.created_at).label("latest_attack_at"),
+                AttackEvent.latitude,
+                AttackEvent.longitude,
             )
-            .filter(AttackEvent.created_at >= start_time)
-            .group_by(AttackEvent.country, AttackEvent.region, AttackEvent.city)
             .order_by(desc("attack_count"), desc("latest_attack_at"))
             .limit(limit)
             .all()
@@ -141,8 +170,12 @@ class AttackEventRepository:
         return [
             {
                 "country": row.country or "unknown",
+                "country_code": row.country_code or None,
                 "region": row.region or "",
+                "region_code": row.region_code or None,
                 "city": row.city or "",
+                "latitude": float(row.latitude) if row.latitude is not None else None,
+                "longitude": float(row.longitude) if row.longitude is not None else None,
                 "attack_count": int(row.attack_count or 0),
                 "unique_ip_count": int(row.unique_ip_count or 0),
                 "high_risk_count": int(row.high_risk_count or 0),
@@ -151,25 +184,31 @@ class AttackEventRepository:
             for row in rows
         ]
 
-    def top_attackers(self, *, start_time: datetime, limit: int = 20) -> list[dict]:
+    def top_attackers(
+        self,
+        *,
+        start_time: datetime,
+        limit: int = 20,
+        attack_only: bool = False,
+    ) -> list[dict]:
         high_risk_case = case(
             (AttackEvent.risk_level.in_(["high", "critical"]), 1),
             else_=0,
         )
 
+        query = db.session.query(
+            AttackEvent.source_ip,
+            func.max(AttackEvent.country).label("country"),
+            func.count(AttackEvent.id).label("attack_count"),
+            func.count(func.distinct(AttackEvent.session_id)).label("session_count"),
+            func.avg(AttackEvent.risk_score).label("avg_risk_score"),
+            func.max(AttackEvent.risk_score).label("max_risk_score"),
+            func.sum(high_risk_case).label("high_risk_count"),
+            func.max(AttackEvent.created_at).label("latest_attack_at"),
+        ).filter(AttackEvent.created_at >= start_time)
+        query = self._apply_attack_only(query, attack_only=attack_only)
         rows = (
-            db.session.query(
-                AttackEvent.source_ip,
-                func.max(AttackEvent.country).label("country"),
-                func.count(AttackEvent.id).label("attack_count"),
-                func.count(func.distinct(AttackEvent.session_id)).label("session_count"),
-                func.avg(AttackEvent.risk_score).label("avg_risk_score"),
-                func.max(AttackEvent.risk_score).label("max_risk_score"),
-                func.sum(high_risk_case).label("high_risk_count"),
-                func.max(AttackEvent.created_at).label("latest_attack_at"),
-            )
-            .filter(AttackEvent.created_at >= start_time)
-            .group_by(AttackEvent.source_ip)
+            query.group_by(AttackEvent.source_ip)
             .order_by(desc("attack_count"), desc("latest_attack_at"))
             .limit(limit)
             .all()
@@ -189,15 +228,21 @@ class AttackEventRepository:
             for row in rows
         ]
 
-    def attack_type_distribution(self, *, start_time: datetime, limit: int = 20) -> list[dict]:
+    def attack_type_distribution(
+        self,
+        *,
+        start_time: datetime,
+        limit: int = 20,
+        attack_only: bool = False,
+    ) -> list[dict]:
+        query = db.session.query(
+            AttackEvent.event_type,
+            func.count(AttackEvent.id).label("attack_count"),
+            func.max(AttackEvent.created_at).label("latest_attack_at"),
+        ).filter(AttackEvent.created_at >= start_time)
+        query = self._apply_attack_only(query, attack_only=attack_only)
         rows = (
-            db.session.query(
-                AttackEvent.event_type,
-                func.count(AttackEvent.id).label("attack_count"),
-                func.max(AttackEvent.created_at).label("latest_attack_at"),
-            )
-            .filter(AttackEvent.created_at >= start_time)
-            .group_by(AttackEvent.event_type)
+            query.group_by(AttackEvent.event_type)
             .order_by(desc("attack_count"), desc("latest_attack_at"))
             .limit(limit)
             .all()
@@ -211,3 +256,8 @@ class AttackEventRepository:
             }
             for row in rows
         ]
+
+    def _apply_attack_only(self, query, *, attack_only: bool):
+        if attack_only:
+            query = query.filter(AttackEvent.event_type != self._NORMAL_EVENT_TYPE)
+        return query

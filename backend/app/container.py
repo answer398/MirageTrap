@@ -1,6 +1,10 @@
 from flask import current_app
 
-from app.infrastructure import build_honeypot_runtime_adapter, build_object_storage_adapter
+from app.infrastructure import (
+    build_geoip_lookup_adapter,
+    build_honeypot_runtime_adapter,
+    build_object_storage_adapter,
+)
 from app.repositories import (
     AdminRepository,
     AttackEventRepository,
@@ -29,7 +33,9 @@ def init_container(app) -> None:
     evidence_repository = EvidenceRepository()
     honeypot_repository = HoneypotRepository()
 
-    risk_engine_service = RiskEngineService()
+    risk_engine_service = RiskEngineService(
+        ruleset_paths=app.config["ATTACK_RULESET_PATHS"],
+    )
     session_service = SessionService(
         session_repository=session_repository,
         window_minutes=app.config["SESSION_AGGREGATION_MINUTES"],
@@ -37,8 +43,10 @@ def init_container(app) -> None:
 
     security_store = app.extensions["security_store"]
     object_storage_adapter = build_object_storage_adapter(app.config)
+    geoip_lookup_adapter = build_geoip_lookup_adapter(app.config)
     honeypot_runtime_adapter = build_honeypot_runtime_adapter(app.config)
     app.extensions["object_storage"] = object_storage_adapter
+    app.extensions["geoip_lookup"] = geoip_lookup_adapter
     app.extensions["honeypot_runtime"] = honeypot_runtime_adapter
 
     auth_service = AuthService(
@@ -55,12 +63,14 @@ def init_container(app) -> None:
         app_name=app.config["APP_NAME"],
         security_store=security_store,
         object_storage=object_storage_adapter,
+        geoip_lookup=geoip_lookup_adapter,
         honeypot_runtime=honeypot_runtime_adapter,
     )
     attack_ingest_service = AttackIngestService(
         event_repository=event_repository,
         session_service=session_service,
         risk_engine_service=risk_engine_service,
+        geoip_lookup=geoip_lookup_adapter,
     )
     attack_query_service = AttackQueryService(
         event_repository=event_repository,
@@ -81,9 +91,11 @@ def init_container(app) -> None:
         honeypot_repository=honeypot_repository,
         runtime_adapter=honeypot_runtime_adapter,
         controller_base_url=app.config["HONEYPOT_CONTROLLER_BASE_URL"],
+        controller_public_base_url=app.config["HONEYPOT_CONTROLLER_PUBLIC_BASE_URL"],
         control_token=app.config["HONEYPOT_CONTROL_TOKEN"],
         ingest_token=app.config["INGEST_TOKEN"],
         heartbeat_timeout_seconds=app.config["HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS"],
+        startup_verify_seconds=app.config["HONEYPOT_STARTUP_VERIFY_SECONDS"],
     )
 
     app.extensions["service_container"] = {

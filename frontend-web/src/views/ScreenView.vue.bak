@@ -84,6 +84,19 @@
           </header>
           <div class="map-stage">
             <div id="world-map-chart" class="world-map"></div>
+            <div class="map-overlay">
+              <div
+                v-for="item in mapSourceOverlays"
+                :key="item.key"
+                class="source-marker"
+                :style="sourceMarkerStyle(item)"
+              >
+                <span class="source-pulse pulse-a"></span>
+                <span class="source-pulse pulse-b"></span>
+                <span class="source-core"></span>
+              </div>
+              <div v-if="mapHomeOverlay" class="home-marker" :style="homeMarkerStyle()"></div>
+            </div>
           </div>
           <div class="map-summary">
             <article>
@@ -154,8 +167,8 @@ const DEFAULT_API = getDefaultApiBase(import.meta.env.VITE_API_BASE_URL);
 const DEFAULT_USERNAME = String(import.meta.env.VITE_DEFAULT_USERNAME || "admin");
 const REFRESH_INTERVAL_MS = 30000;
 const MAP_HOME = [121.4737, 31.2304];
-const MAP_ATTACK_LINE_COLOR = "#51f3ff";
-const MAP_ATTACK_ARROW_COLOR = "#aafcff";
+const MAP_ATTACK_LINE_COLOR = "#ff9a3c";
+const MAP_ATTACK_ARROW_COLOR = "#ff4d4f";
 
 const TYPE_LABELS = {
   web_req: "普通请求",
@@ -204,15 +217,6 @@ function safeCoord(value) {
   }
   const num = Number(value);
   return Number.isFinite(num) ? Number(num.toFixed(6)) : null;
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function hashedCoord(seed) {
@@ -274,8 +278,9 @@ export default {
         attack_total: 0,
         high_risk_total: 0,
       },
+      mapSourceOverlays: [],
+      mapHomeOverlay: null,
       healthComponents: {},
-      globeTextureUrl: "",
       charts: {
         sources: null,
         map: null,
@@ -400,135 +405,6 @@ export default {
         ...options,
       });
     },
-    // 生成纯线条球体纹理：仅保留国家边界和弱经纬线，不绘制陆地点阵、过渡带与额外光晕。
-    buildGlobeTexture() {
-      const width = 2048;
-      const height = 1024;
-      const hostStyle = [
-        "position:fixed",
-        "left:-99999px",
-        "top:-99999px",
-        `width:${width}px`,
-        `height:${height}px`,
-        "pointer-events:none",
-        "opacity:0",
-      ].join(";");
-
-      const baseGeoOption = {
-        map: "world",
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-        boundingCoords: [[-180, 90], [180, -90]],
-        silent: true,
-      };
-
-      const createGeoLayer = (itemStyle) => {
-        const host = document.createElement("div");
-        host.style.cssText = hostStyle;
-        document.body.appendChild(host);
-
-        const chart = echarts.init(host, null, {
-          renderer: "canvas",
-          width,
-          height,
-          devicePixelRatio: 1,
-        });
-
-        chart.setOption({
-          animation: false,
-          backgroundColor: "transparent",
-          geo: {
-            ...baseGeoOption,
-            itemStyle,
-            emphasis: {
-              label: { show: false },
-              itemStyle,
-            },
-          },
-        });
-        chart.getZr()?.refreshImmediately?.();
-
-        return {
-          host,
-          chart,
-          canvas: host.querySelector("canvas"),
-        };
-      };
-
-      const landLayer = createGeoLayer({
-        areaColor: "rgba(255, 255, 255, 0.98)",
-        borderColor: "rgba(0, 0, 0, 0)",
-        borderWidth: 0,
-      });
-      const borderLayer = createGeoLayer({
-        areaColor: "rgba(0, 0, 0, 0)",
-        borderColor: "rgba(142, 248, 255, 0.98)",
-        borderWidth: 1.85,
-      });
-
-      const finalCanvas = document.createElement("canvas");
-      finalCanvas.width = width;
-      finalCanvas.height = height;
-      const context = finalCanvas.getContext("2d");
-
-      if (context) {
-        context.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
-        const landCanvas = landLayer.canvas;
-        const borderCanvas = borderLayer.canvas;
-
-        context.fillStyle = "rgba(16, 50, 70, 0.98)";
-        context.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
-
-        if (landCanvas) {
-          const gridCanvas = document.createElement("canvas");
-          gridCanvas.width = width;
-          gridCanvas.height = height;
-          const gridContext = gridCanvas.getContext("2d");
-
-          if (gridContext) {
-            gridContext.strokeStyle = "rgba(86, 232, 255, 0.1)";
-            gridContext.lineWidth = 0.7;
-
-            for (let longitude = -180; longitude <= 180; longitude += 18) {
-              const gridX = ((longitude + 180) / 360) * width;
-              gridContext.beginPath();
-              gridContext.moveTo(gridX, 0);
-              gridContext.lineTo(gridX, height);
-              gridContext.stroke();
-            }
-
-            for (let latitude = -72; latitude <= 72; latitude += 18) {
-              const gridY = ((90 - latitude) / 180) * height;
-              gridContext.beginPath();
-              gridContext.moveTo(0, gridY);
-              gridContext.lineTo(width, gridY);
-              gridContext.stroke();
-            }
-
-            gridContext.globalCompositeOperation = "destination-in";
-            gridContext.drawImage(landCanvas, 0, 0);
-            context.drawImage(gridCanvas, 0, 0);
-          }
-        }
-
-        if (borderCanvas) {
-          context.save();
-          context.globalAlpha = 0.98;
-          context.drawImage(borderCanvas, 0, 0);
-          context.restore();
-        }
-      }
-
-      const textureUrl = finalCanvas.toDataURL("image/png");
-
-      [landLayer, borderLayer].forEach((layer) => {
-        layer.chart.dispose();
-        layer.host.remove();
-      });
-      return textureUrl;
-    },
     initCharts() {
       if (!echarts) {
         return;
@@ -538,9 +414,6 @@ export default {
       this.charts.map = echarts.init(document.getElementById("world-map-chart"));
       this.charts.attackTypes = echarts.init(document.getElementById("attack-type-chart"));
       this.charts.trends = echarts.init(document.getElementById("trend-chart"));
-
-      this.globeTextureUrl = this.buildGlobeTexture();
-
       this.updateCharts();
     },
     disposeCharts() {
@@ -557,6 +430,7 @@ export default {
           this.charts[key].resize();
         }
       });
+      this.updateMapOverlays();
     },
     updateCharts() {
       if (!echarts) {
@@ -574,6 +448,72 @@ export default {
       if (this.charts.trends) {
         this.charts.trends.setOption(this.buildTrendOption(), true);
       }
+      this.$nextTick(() => {
+        window.requestAnimationFrame(() => {
+          this.updateMapOverlays();
+        });
+      });
+    },
+    // Draw source and home markers in a DOM overlay so pulse color is not affected by ECharts theme fallback.
+    updateMapOverlays() {
+      const mapChart = this.charts.map;
+      if (!mapChart) {
+        this.mapSourceOverlays = [];
+        this.mapHomeOverlay = null;
+        return;
+      }
+
+      const sourceOverlays = (this.hotspotRows || [])
+        .slice(0, 12)
+        .map((item) => {
+          const pixel = mapChart.convertToPixel({ geoIndex: 0 }, resolveCoord(item));
+          if (!Array.isArray(pixel) || pixel.length < 2) {
+            return null;
+          }
+          if (!Number.isFinite(pixel[0]) || !Number.isFinite(pixel[1])) {
+            return null;
+          }
+
+          const attackCount = safeNumber(item.attack_count);
+          return {
+            key: item.key,
+            left: Number(pixel[0].toFixed(2)),
+            top: Number(pixel[1].toFixed(2)),
+            size: Math.max(22, Math.min(34, 22 + attackCount * 0.4)),
+            coreSize: Math.max(10, Math.min(14, 10 + attackCount * 0.08)),
+          };
+        })
+        .filter(Boolean);
+
+      const homePixel = mapChart.convertToPixel({ geoIndex: 0 }, MAP_HOME);
+      this.mapSourceOverlays = sourceOverlays;
+      this.mapHomeOverlay =
+        Array.isArray(homePixel) &&
+        homePixel.length >= 2 &&
+        Number.isFinite(homePixel[0]) &&
+        Number.isFinite(homePixel[1])
+          ? {
+              left: Number(homePixel[0].toFixed(2)),
+              top: Number(homePixel[1].toFixed(2)),
+            }
+          : null;
+    },
+    sourceMarkerStyle(item) {
+      return {
+        left: `${item.left}px`,
+        top: `${item.top}px`,
+        "--marker-size": `${item.size}px`,
+        "--core-size": `${item.coreSize}px`,
+      };
+    },
+    homeMarkerStyle() {
+      if (!this.mapHomeOverlay) {
+        return {};
+      }
+      return {
+        left: `${this.mapHomeOverlay.left}px`,
+        top: `${this.mapHomeOverlay.top}px`,
+      };
     },
     buildSourceOption() {
       const items = (this.topAttackers || []).slice(0, 8).reverse();
@@ -620,46 +560,14 @@ export default {
       };
     },
     buildMapOption() {
-      const pointItems = (this.hotspotRows || []).slice(0, 12);
-      const typeLabel = (value) => this.typeLabel(value);
-      const dateText = (value) => this.dateText(value);
-      const renderAttackTypes = (items = []) => {
-        if (!items.length) {
-          return "暂无";
-        }
-        return items
-          .slice(0, 3)
-          .map(
-            (item) =>
-              `${escapeHtml(typeLabel(item.event_type))} (${this.fmtNum(item.attack_count)})`,
-          )
-          .join("<br/>");
-      };
-      const renderSampleIps = (items = []) => {
-        if (!items.length) {
-          return "-";
-        }
-        return items.slice(0, 3).map((item) => escapeHtml(item)).join("<br/>");
-      };
-
-      // 保留攻击量到 value[3]，这样 3D 点大小仍可按强度变化。
       const points = (this.hotspotRows || []).slice(0, 12).map((item) => {
         const coord = resolveCoord(item);
         return {
           name: item.label,
-          value: [...coord, 0, safeNumber(item.attack_count)],
-          country: item.country || "unknown",
-          region: item.region || "",
-          city: item.city || "",
+          value: [...coord, safeNumber(item.attack_count)],
           attackCount: safeNumber(item.attack_count),
           uniqueIpCount: safeNumber(item.unique_ip_count),
           highRiskCount: safeNumber(item.high_risk_count),
-          primarySourceIp: item.primary_source_ip || "",
-          sampleSourceIps: Array.isArray(item.sample_source_ips) ? item.sample_source_ips : [],
-          attackTypes: Array.isArray(item.attack_types) ? item.attack_types : [],
-          latestEventType: item.latest_event_type || "",
-          latestRiskLevel: item.latest_risk_level || "",
-          latestAttackAt: item.latest_attack_at || "",
         };
       });
 
@@ -667,14 +575,26 @@ export default {
         fromName: item.name,
         toName: "MirageTrap",
         value: item.attackCount,
-        coords: [
-          [item.value[0], item.value[1]],
-          MAP_HOME,
-        ],
+        coords: [item.value.slice(0, 2), MAP_HOME],
       }));
 
       return {
         animationDuration: 1200,
+        geo: {
+          map: "world",
+          roam: false,
+          zoom: 1.08,
+          itemStyle: {
+            areaColor: "#0c2d4d",
+            borderColor: "rgba(64, 182, 255, 0.35)",
+          },
+          emphasis: {
+            itemStyle: {
+              areaColor: "#1b4a73",
+            },
+            label: { show: false },
+          },
+        },
         tooltip: {
           trigger: "item",
           backgroundColor: "rgba(8, 22, 42, 0.95)",
@@ -682,149 +602,56 @@ export default {
           textStyle: { color: "#e7fbff" },
           formatter(params) {
             const data = params.data || {};
-            if (params.seriesType === "lines3D") {
-              return `${data.fromName || "-"} -> ${data.toName || "-"}<br/>攻击 ${safeNumber(data.value)} 次`;
-            }
-            if (params.seriesName === "Sources" && Array.isArray(data.value)) {
-              const locationText =
-                [data.country, data.region, data.city].filter(Boolean).join(" / ") || data.name || "-";
-              const primaryIp = data.primarySourceIp ? escapeHtml(data.primarySourceIp) : "-";
-              const latestType = data.latestEventType
-                ? escapeHtml(typeLabel(data.latestEventType))
-                : "暂无";
-              const latestRisk = data.latestRiskLevel ? escapeHtml(data.latestRiskLevel) : "-";
-              const latestAttackAt = data.latestAttackAt ? escapeHtml(dateText(data.latestAttackAt)) : "-";
-
-              return [
-                `<div><strong style="color:#f3feff;">${escapeHtml(locationText)}</strong></div>`,
-                `<div style="margin-top:6px;">主要 IP：${primaryIp}</div>`,
-                `<div>示例 IP：<br/>${renderSampleIps(data.sampleSourceIps)}</div>`,
-                `<div>攻击类型：<br/>${renderAttackTypes(data.attackTypes)}</div>`,
-                `<div>攻击次数：${safeNumber(data.attackCount)} 次</div>`,
-                `<div>来源 IP 数：${safeNumber(data.uniqueIpCount)} 个</div>`,
-                `<div>高危事件：${safeNumber(data.highRiskCount)} 条</div>`,
-                `<div>最近类型：${latestType}</div>`,
-                `<div>风险等级：${latestRisk}</div>`,
-                `<div>最近时间：${latestAttackAt}</div>`,
-              ].join("");
+            if (params.seriesType === "lines") {
+              return `${data.fromName || "-"} -> ${data.toName || "-"}<br/>攻击 ${safeNumber(
+                data.value,
+              )} 次`;
             }
             if (Array.isArray(data.value)) {
-              return `${data.name || "-"}<br/>攻击 ${safeNumber(data.attackCount)} 次<br/>来源 IP ${safeNumber(data.uniqueIpCount)} 个<br/>高危 ${safeNumber(data.highRiskCount)} 条`;
+              return `${data.name || "-"}<br/>攻击 ${safeNumber(data.attackCount)} 次<br/>来源 IP ${safeNumber(
+                data.uniqueIpCount,
+              )} 个<br/>高危 ${safeNumber(data.highRiskCount)} 条`;
             }
             return params.name || "-";
-          },
-        },
-        globe: {
-          baseTexture: this.globeTextureUrl || undefined,
-          baseColor: "#20566f",
-          shading: "color",
-          environment: "none",
-          globeRadius: 96,
-          globeOuterRadius: 96,
-          atmosphere: { show: false },
-          viewControl: {
-            autoRotate: pointItems.length > 0,
-            autoRotateAfterStill: 6,
-            autoRotateSpeed: 0.95,
-            distance: 206,
-            minDistance: 176,
-            maxDistance: 260,
-            alpha: 24,
-            beta: 160,
-            panSensitivity: 0,
-            rotateSensitivity: 0.9,
-            zoomSensitivity: 0.8,
-            panMouseButton: "left",
-            rotateMouseButton: "left",
-          },
-          temporalSuperSampling: {
-            enable: false,
           },
         },
         series: [
           {
             name: "Attack Paths",
-            type: "lines3D",
-            coordinateSystem: "globe",
+            type: "lines",
+            coordinateSystem: "geo",
+            zlevel: 2,
             effect: {
-              show: true,
-              period: 5.4,
-              trailWidth: 3,
-              trailLength: 0.22,
-              trailOpacity: 0.98,
-              trailColor: MAP_ATTACK_ARROW_COLOR,
+              show: false,
             },
-            blendMode: "lighter",
             lineStyle: {
-              width: 1.5,
-              opacity: 0.74,
+              width: 2.4,
+              opacity: 0.82,
+              curveness: 0.22,
               color: MAP_ATTACK_LINE_COLOR,
             },
             data: lines,
           },
           {
-            name: "Sources",
-            type: "scatter3D",
-            coordinateSystem: "globe",
-            symbolSize(value) {
-              return Math.max(5, Math.min(10, 5 + safeNumber(value[3]) * 0.18));
+            name: "Attack Arrows",
+            type: "lines",
+            coordinateSystem: "geo",
+            zlevel: 3,
+            effect: {
+              show: true,
+              period: 5,
+              trailLength: 0.2,
+              symbol: "arrow",
+              symbolSize: 7,
+              color: MAP_ATTACK_ARROW_COLOR,
             },
-            itemStyle: {
-              color: "rgba(128, 248, 255, 0.92)",
-              borderColor: "rgba(230, 255, 255, 0.95)",
-              borderWidth: 0.8,
-              opacity: 0.92,
+            lineStyle: {
+              width: 0.8,
+              opacity: 0.12,
+              curveness: 0.22,
+              color: MAP_ATTACK_ARROW_COLOR,
             },
-            label: {
-              show: false,
-              formatter: "{b}",
-              position: "right",
-              textStyle: {
-                color: "#d9f6ff",
-                fontSize: 12,
-                backgroundColor: "rgba(5, 18, 35, 0.55)",
-                borderRadius: 4,
-                padding: [4, 6],
-              },
-            },
-            emphasis: {
-              label: {
-                show: true,
-              },
-            },
-            data: points,
-          },
-          {
-            name: "Home",
-            type: "scatter3D",
-            coordinateSystem: "globe",
-            symbolSize: 12,
-            itemStyle: {
-              color: "#79ff8d",
-              borderColor: "rgba(221, 255, 228, 0.98)",
-              borderWidth: 1.2,
-              opacity: 1,
-            },
-            label: {
-              show: false,
-              position: "bottom",
-              formatter: "MirageTrap",
-              textStyle: {
-                color: "#8df0ff",
-                fontSize: 14,
-                fontWeight: "bold",
-                backgroundColor: "rgba(4, 16, 32, 0.45)",
-                borderRadius: 4,
-                padding: [4, 6],
-              },
-            },
-            data: [
-              {
-                name: "MirageTrap",
-                value: [...MAP_HOME, 0, safeNumber(this.mapSummary.attack_total)],
-                attackCount: safeNumber(this.mapSummary.attack_total),
-              },
-            ],
+            data: lines,
           },
         ],
       };
@@ -850,44 +677,31 @@ export default {
           textStyle: { color: "#e7fbff" },
         },
         legend: {
-          type: "scroll",
           bottom: 0,
-          left: "center",
-          width: "96%",
           icon: "circle",
           textStyle: {
             color: "rgba(205, 239, 255, 0.72)",
             fontSize: 10,
           },
-          pageTextStyle: {
-            color: "rgba(205, 239, 255, 0.72)",
-          },
         },
         series: [
           {
             type: "pie",
-            radius: ["40%", "62%"],
-            center: ["50%", "40%"],
-            avoidLabelOverlap: true,
+            radius: ["32%", "68%"],
+            center: ["50%", "45%"],
+            roseType: "radius",
             itemStyle: {
               borderRadius: 6,
               borderColor: "rgba(9, 18, 35, 0.92)",
               borderWidth: 2,
             },
             label: {
-              show: false,
+              color: "#d6f7ff",
+              formatter: ({ name, value }) => `${name}\n${value}`,
+              fontSize: 10,
             },
             labelLine: {
-              show: false,
-            },
-            emphasis: {
-              label: {
-                show: true,
-                color: "#d6f7ff",
-                fontSize: 11,
-                fontWeight: "bold",
-                formatter: ({ name, value, percent }) => `${name}\n${value} · ${percent}%`,
-              },
+              lineStyle: { color: "rgba(205, 239, 255, 0.45)" },
             },
             data: items.map((item) => ({
               name: this.typeLabel(item.event_type),
@@ -1236,26 +1050,6 @@ export default {
   position: relative;
   height: calc(100% - 94px);
   min-height: 560px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 18% 24%, rgba(95, 243, 255, 0.16) 0 1.3px, transparent 2px),
-    radial-gradient(circle at 73% 18%, rgba(172, 255, 249, 0.14) 0 1px, transparent 1.9px),
-    radial-gradient(circle at 86% 62%, rgba(113, 244, 255, 0.12) 0 1.1px, transparent 2px),
-    radial-gradient(circle at 42% 78%, rgba(134, 255, 245, 0.1) 0 1px, transparent 1.8px),
-    linear-gradient(180deg, rgba(4, 12, 24, 0.16), rgba(3, 9, 18, 0.04));
-  background-size: 180px 180px, 240px 240px, 220px 220px, 260px 260px, 100% 100%;
-}
-
-.map-stage::after {
-  content: "";
-  position: absolute;
-  left: -8%;
-  right: -8%;
-  bottom: 18px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(90, 242, 255, 0.72), transparent);
-  box-shadow: 0 0 16px rgba(86, 244, 255, 0.42);
-  pointer-events: none;
 }
 
 .world-map {
@@ -1263,7 +1057,75 @@ export default {
   inset: 0;
   height: 100%;
   min-height: 0;
-  z-index: 1;
+}
+
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.source-marker,
+.home-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.source-marker {
+  width: var(--marker-size);
+  height: var(--marker-size);
+}
+
+.source-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--marker-size);
+  height: var(--marker-size);
+  border: 2px solid rgba(255, 211, 111, 0.78);
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(255, 211, 111, 0.32);
+  transform: translate(-50%, -50%) scale(0.45);
+  animation: sourcePulse 2.8s ease-out infinite;
+}
+
+.source-pulse.pulse-b {
+  animation-delay: 1.4s;
+}
+
+.source-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--core-size);
+  height: var(--core-size);
+  border-radius: 999px;
+  background: #ffd36f;
+  border: 1px solid #fff0a6;
+  box-shadow: 0 0 12px rgba(255, 211, 111, 0.7);
+  transform: translate(-50%, -50%);
+}
+
+.home-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #36f0ff;
+  border: 1px solid rgba(141, 240, 255, 0.92);
+  box-shadow: 0 0 14px rgba(54, 240, 255, 0.82);
+}
+
+@keyframes sourcePulse {
+  0% {
+    opacity: 0.78;
+    transform: translate(-50%, -50%) scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.75);
+  }
 }
 
 .map-legend {
@@ -1283,13 +1145,13 @@ export default {
 }
 
 .dot.source {
-  background: #7ff8ff;
-  box-shadow: 0 0 10px rgba(127, 248, 255, 0.72);
+  background: #ffd36f;
+  box-shadow: 0 0 10px rgba(255, 211, 111, 0.72);
 }
 
 .dot.home {
-  background: #79ff8d;
-  box-shadow: 0 0 10px rgba(121, 255, 141, 0.74);
+  background: #36f0ff;
+  box-shadow: 0 0 10px rgba(54, 240, 255, 0.7);
 }
 
 .map-summary {

@@ -19,9 +19,35 @@ def ensure_runtime_schema_compatibility() -> None:
 
 def _ensure_attack_events_compatibility(*, inspector, dialect: str) -> None:
     columns = {item["name"] for item in inspector.get_columns("attack_events")}
+    float_type = "DOUBLE PRECISION" if dialect == "postgresql" else "REAL"
+
+    statements = []
+    add_column = statements.append
+
+    if "country_code" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN country_code VARCHAR(8)")
+    if "region_code" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN region_code VARCHAR(32)")
+    if "timezone" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN timezone VARCHAR(64)")
+    if "latitude" not in columns:
+        add_column(f"ALTER TABLE attack_events ADD COLUMN latitude {float_type}")
+    if "longitude" not in columns:
+        add_column(f"ALTER TABLE attack_events ADD COLUMN longitude {float_type}")
+    if "accuracy_radius" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN accuracy_radius INTEGER")
+    if "asn_org" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN asn_org VARCHAR(255)")
+    if "geo_source" not in columns:
+        add_column("ALTER TABLE attack_events ADD COLUMN geo_source VARCHAR(32)")
+
+    for statement in statements:
+        db.session.execute(text(statement))
+
     if "ioc_hit" in columns and dialect == "postgresql":
         db.session.execute(text("ALTER TABLE attack_events ALTER COLUMN ioc_hit SET DEFAULT false"))
         db.session.execute(text("UPDATE attack_events SET ioc_hit = false WHERE ioc_hit IS NULL"))
+    if statements or "ioc_hit" in columns:
         db.session.commit()
 
 

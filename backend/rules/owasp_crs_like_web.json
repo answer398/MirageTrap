@@ -1,0 +1,471 @@
+{
+  "source": "owasp-crs-inspired",
+  "rules": [
+    {
+      "id": "crs-sqli-union-select",
+      "title": "SQL injection UNION SELECT payload",
+      "description": "Detects UNION SELECT and related data extraction sequences in request targets.",
+      "event_type": "web_sqli",
+      "score": 52,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-sqli", "owasp-crs-inspired", "paranoia-level/1"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:union(?:/\\*.*?\\*/|\\s|\\+)+select|select(?:/\\*.*?\\*/|\\s|\\+)+.+?(?:from|into))",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"],
+            "flags": ["DOTALL"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-sqli-boolean-time-based",
+      "title": "SQL injection boolean or time-based payload",
+      "description": "Detects OR/AND boolean bypasses and time-delay database functions.",
+      "event_type": "web_sqli",
+      "score": 46,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-sqli", "owasp-crs-inspired"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:\\b(?:or|and)\\b\\s+[\\w'\"\\)\\(]+\\s*=\\s*[\\w'\"\\)\\(]+|sleep\\s*\\(|benchmark\\s*\\(|waitfor\\s+delay|pg_sleep\\s*\\()",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-sqli-db-metadata-access",
+      "title": "SQL injection metadata and file access payload",
+      "description": "Detects information_schema, version disclosure and file-write primitives.",
+      "event_type": "web_sqli",
+      "score": 48,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-sqli", "database-enumeration"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body"],
+            "operator": "regex",
+            "pattern": "(?:information_schema|@@version|load_file\\s*\\(|into\\s+outfile|into\\s+dumpfile|xp_cmdshell|extractvalue\\s*\\(|updatexml\\s*\\()",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-xss-script-or-handler",
+      "title": "Cross-site scripting script or event-handler payload",
+      "description": "Detects script tags, javascript URLs and inline event handlers.",
+      "event_type": "web_xss",
+      "score": 44,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-xss", "owasp-crs-inspired"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:<script\\b|javascript:|on(?:error|load|click|mouseover|focus|mouseenter)\\s*=|<img[^>]+onerror)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-xss-active-content-vector",
+      "title": "Cross-site scripting active content vector",
+      "description": "Detects SVG/iframe/srcdoc payloads and common browser-side execution sinks.",
+      "event_type": "web_xss",
+      "score": 34,
+      "severity": "medium",
+      "confidence": "medium",
+      "tags": ["attack-xss", "browser-execution"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:<svg\\b[^>]*onload|<iframe\\b|srcdoc\\s*=|document\\.cookie|alert\\s*\\(|prompt\\s*\\()",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-traversal-relative-segments",
+      "title": "Path traversal relative segment payload",
+      "description": "Detects directory traversal using ../ or ..\\ segments after URL decoding.",
+      "event_type": "web_path_traversal",
+      "score": 38,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-lfi", "path-traversal"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:\\.\\./|\\.\\.\\\\)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "normalize_slashes", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-traversal-sensitive-target",
+      "title": "Path traversal sensitive file target",
+      "description": "Detects direct probing of sensitive local files and configuration artifacts.",
+      "event_type": "web_path_traversal",
+      "score": 34,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-lfi", "sensitive-file-access"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:/etc/passwd|/windows/win\\.ini|/proc/self/environ|/boot\\.ini|/root/\\.ssh|web\\.config)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "normalize_slashes", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-rce-shell-metacharacters",
+      "title": "Command execution shell metacharacter payload",
+      "description": "Detects shell metacharacters combined with common Unix command names.",
+      "event_type": "web_cmd_exec",
+      "score": 48,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-rce", "command-injection"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:;\\s*(?:cat|id|whoami|uname|wget|curl|nc|netcat|bash|sh)\\b|&&\\s*(?:cat|id|whoami|uname|wget|curl|bash|sh)\\b|\\|\\s*(?:cat|id|whoami|uname|wget|curl)\\b)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-rce-command-substitution",
+      "title": "Command execution substitution or shell launcher",
+      "description": "Detects command substitution, powershell and direct shell launcher payloads.",
+      "event_type": "web_cmd_exec",
+      "score": 44,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-rce", "os-command"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:`[^`]+`|\\$\\([^\\)]+\\)|(?:^|\\W)powershell(?:\\.exe)?\\b|/bin/(?:sh|bash)\\b|cmd(?:\\.exe)?\\s*/c)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-upload-executable-multipart",
+      "title": "Executable file upload via multipart form-data",
+      "description": "Detects multipart upload requests carrying executable or script file extensions.",
+      "event_type": "web_file_upload",
+      "score": 42,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-file-upload", "multipart"],
+      "match": {
+        "logic": "all",
+        "matchers": [
+          {
+            "fields": ["headers", "body", "raw_request"],
+            "operator": "contains",
+            "value": "multipart/form-data",
+            "transforms": ["lowercase"]
+          },
+          {
+            "fields": ["body", "raw_request", "params"],
+            "operator": "regex",
+            "pattern": "filename\\s*=\\s*\"?[^\"]+\\.(?:php[3457]?|phtml|jsp|jspx|asp|aspx|war|cgi|pl|py|sh|exe|dll)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-upload-webshell-payload",
+      "title": "WebShell upload payload marker",
+      "description": "Detects upload payloads containing webshell keywords or dangerous execution functions.",
+      "event_type": "web_file_upload",
+      "score": 26,
+      "severity": "medium",
+      "confidence": "medium",
+      "tags": ["attack-file-upload", "webshell"],
+      "match": {
+        "logic": "all",
+        "matchers": [
+          {
+            "fields": ["headers", "body", "raw_request"],
+            "operator": "contains",
+            "value": "multipart/form-data",
+            "transforms": ["lowercase"]
+          },
+          {
+            "fields": ["body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:c99|r57|webshell|eval\\s*\\(|assert\\s*\\(|passthru\\s*\\(|shell_exec\\s*\\()",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-ssrf-cloud-metadata-or-loopback",
+      "title": "SSRF cloud metadata or loopback target",
+      "description": "Detects requests targeting cloud metadata services or loopback addresses.",
+      "event_type": "web_ssrf",
+      "score": 40,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-ssrf", "metadata-service"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "params", "body"],
+            "operator": "regex",
+            "pattern": "(?:169\\.254\\.169\\.254|metadata\\.google\\.internal|100\\.100\\.100\\.200|127\\.0\\.0\\.1|0\\.0\\.0\\.0|localhost(?::\\d+)?|::1)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-ssrf-dangerous-protocol",
+      "title": "SSRF dangerous protocol payload",
+      "description": "Detects file, gopher, dict and similar dangerous schemes used in SSRF payloads.",
+      "event_type": "web_ssrf",
+      "score": 36,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-ssrf", "protocol-abuse"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:file://|gopher://|dict://|ftp://|smb://|ldap://|tftp://)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-ssrf-internal-url-parameter",
+      "title": "SSRF internal URL parameter target",
+      "description": "Detects internal HTTP targets routed through URL-like parameters.",
+      "event_type": "web_ssrf",
+      "score": 34,
+      "severity": "medium",
+      "confidence": "medium",
+      "tags": ["attack-ssrf", "internal-routing"],
+      "match": {
+        "logic": "all",
+        "matchers": [
+          {
+            "fields": ["param_names"],
+            "operator": "phrase_match",
+            "values": ["url", "uri", "dest", "destination", "redirect", "next", "target", "proxy", "feed", "endpoint", "callback"],
+            "transforms": ["lowercase"]
+          },
+          {
+            "fields": ["query_string", "params", "body"],
+            "operator": "regex",
+            "pattern": "https?://(?:127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0|10\\.|172\\.(?:1[6-9]|2\\d|3[01])\\.|192\\.168\\.|169\\.254\\.169\\.254)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-ssti-template-expression",
+      "title": "SSTI template expression payload",
+      "description": "Detects common Jinja, Twig, EL and server-side template expression markers.",
+      "event_type": "web_ssti",
+      "score": 36,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-ssti", "template-expression"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:\\{\\{[^\\n]{0,120}\\}\\}|\\$\\{[^\\n]{0,120}\\}|<%=?[^\\n]{0,120}%>)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-ssti-runtime-introspection",
+      "title": "SSTI runtime introspection payload",
+      "description": "Detects class and runtime introspection primitives frequently used in SSTI exploitation.",
+      "event_type": "web_ssti",
+      "score": 38,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-ssti", "runtime-introspection"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["query_string", "params", "body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:__class__|__mro__|__subclasses__|self\\.\\__dict__|cycler\\.|config\\[['\"]|request\\.application)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-xxe-doctype-entity",
+      "title": "XXE DOCTYPE and ENTITY payload",
+      "description": "Detects XML documents declaring both DOCTYPE and ENTITY sections.",
+      "event_type": "web_xxe",
+      "score": 42,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-xxe", "doctype-entity"],
+      "match": {
+        "logic": "all",
+        "matchers": [
+          {
+            "fields": ["body", "raw_request"],
+            "operator": "regex",
+            "pattern": "<!doctype\\s+[^>]+",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          },
+          {
+            "fields": ["body", "raw_request"],
+            "operator": "regex",
+            "pattern": "<!entity\\s+",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-xxe-external-entity-uri",
+      "title": "XXE external entity URI payload",
+      "description": "Detects SYSTEM or PUBLIC entity declarations referencing local or remote resources.",
+      "event_type": "web_xxe",
+      "score": 40,
+      "severity": "high",
+      "confidence": "high",
+      "tags": ["attack-xxe", "external-entity"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["body", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:system\\s+[\"'](?:file|expect|php|jar):|public\\s+[\"'][^\"']+[\"']\\s+[\"'](?:file|http|ftp):)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-scan-automation-user-agent",
+      "title": "Automation or scanner user-agent",
+      "description": "Detects common scanner signatures in user-agent and raw request headers.",
+      "event_type": "web_scan",
+      "score": 24,
+      "severity": "medium",
+      "confidence": "high",
+      "tags": ["attack-scan", "automation"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["headers:User-Agent", "headers", "raw_request"],
+            "operator": "phrase_match",
+            "values": ["sqlmap", "acunetix", "nikto", "nmap", "masscan", "wpscan", "dirsearch", "gobuster", "zgrab", "nuclei", "jaeles", "httpx"],
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-scan-sensitive-probe-path",
+      "title": "Scanner probe path for common sensitive endpoints",
+      "description": "Detects vulnerability scanner probes against common framework and admin endpoints.",
+      "event_type": "web_scan",
+      "score": 22,
+      "severity": "medium",
+      "confidence": "medium",
+      "tags": ["attack-scan", "endpoint-probing"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:/\\.git(?:/|%2f)|/\\.env(?:\\b|/)|/phpmyadmin(?:\\b|/)|/wp-(?:admin|login\\.php)|/vendor/phpunit|/actuator/(?:env|heapdump|jolokia)|/cgi-bin/|/boaform/|/HNAP1/|/manager/html)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "crs-scan-framework-fingerprint-probe",
+      "title": "Framework fingerprinting or exploit probe",
+      "description": "Detects probing for common admin, setup and exploit-friendly files.",
+      "event_type": "web_scan",
+      "score": 20,
+      "severity": "medium",
+      "confidence": "medium",
+      "tags": ["attack-scan", "framework-probe"],
+      "match": {
+        "logic": "any",
+        "matchers": [
+          {
+            "fields": ["path", "query_string", "raw_request"],
+            "operator": "regex",
+            "pattern": "(?:/adminer(?:\\.php)?|/setup\\.php|/install\\.php|/owa/auth/logon\\.aspx|/server-status|/\\.well-known/|/api/jsonws|/solr/admin/)",
+            "transforms": ["url_decode", "html_unescape", "strip_nulls", "collapse_whitespace", "lowercase"]
+          }
+        ]
+      }
+    }
+  ]
+}

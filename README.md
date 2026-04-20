@@ -272,10 +272,29 @@ curl "http://127.0.0.1:18080/api/xml" \
 | `HONEYPOT_CONTROL_TOKEN` | 蜜罐心跳/控制令牌 | 默认跟随 `INGEST_TOKEN` |
 | `ADMIN_DEFAULT_USERNAME` | 初始管理员账号 | `admin` |
 | `ADMIN_DEFAULT_PASSWORD` | 初始管理员密码 | `Admin@123456` |
+| `GEOIP_ENABLED` | 是否启用 GeoLite2 本地 IP 归属地解析 | `false` |
+| `GEOIP_CITY_DB_PATH` | GeoLite2 City 数据库路径 | `instance/geoip/GeoLite2-City.mmdb` |
+| `GEOIP_ASN_DB_PATH` | GeoLite2 ASN 数据库路径 | `instance/geoip/GeoLite2-ASN.mmdb` |
+| `ATTACK_RULESET_PATHS` | 攻击识别规则目录或文件，支持逗号分隔 | `rules` |
 | `HONEYPOT_ORCHESTRATION_ENABLED` | 是否启用 Docker 编排控制 | `true` |
 | `HONEYPOT_DOCKER_NETWORK` | 蜜罐容器加入的 Docker 网络 | `miragetrap-net` |
 | `HONEYPOT_HEARTBEAT_INTERVAL_SECONDS` | 蜜罐心跳发送间隔 | `15` |
 | `HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS` | 控制端判定心跳超时阈值 | `45` |
+
+## 攻击规则引擎
+
+- 当前后端会从 `backend/rules/` 加载外部攻击识别规则。
+- 规则路径通过 `ATTACK_RULESET_PATHS` 配置，支持目录或文件，多个路径用逗号分隔。
+- 默认已提供一组 `OWASP CRS` 思路改写的 Web 攻击规则，覆盖 SQL 注入、XSS、路径遍历、命令执行、恶意上传、SSRF、SSTI、XXE 和扫描探测。
+- 若要扩展规则，优先在 `backend/rules/` 中新增规则文件，而不是直接修改 Python 代码。
+
+## GeoLite2 归属地
+
+- 后端支持使用 `GeoLite2 City` 和 `GeoLite2 ASN` 本地数据库解析来源 IP 的国家、地区、城市、经纬度、时区和 ASN 信息。
+- 默认数据库路径为 `backend/instance/geoip/GeoLite2-City.mmdb` 和 `backend/instance/geoip/GeoLite2-ASN.mmdb`，也可以通过 `GEOIP_CITY_DB_PATH`、`GEOIP_ASN_DB_PATH` 覆盖。
+- 启用方式：将 `GEOIP_ENABLED=true`，并把官方 `.mmdb` 文件放到对应路径后重启后端。
+- Docker Compose 已预留 `./backend/instance/geoip:/app/instance/geoip:ro` 挂载，容器内会直接读取宿主机上的数据库文件。
+- 如果来源 IP 是内网、回环或保留地址，系统会标记为 `private/local`，不会伪造地理坐标。
 
 ## 安全与部署注意事项
 

@@ -1348,8 +1348,20 @@ def _post_json(url: str, payload: dict, headers: dict, *, label: str) -> None:
     try:
         with request.urlopen(req, timeout=2.5) as resp:
             resp.read(64)
+    except error.HTTPError as exc:
+        try:
+            response_body = exc.read(256).decode("utf-8", errors="ignore").strip()
+        except Exception:  # noqa: BLE001
+            response_body = ""
+        if response_body:
+            print(
+                f"[honeypot-web] {label} failed: url={url}, status={exc.code}, "
+                f"reason={exc.reason}, body={_truncate(response_body)}"
+            )
+        else:
+            print(f"[honeypot-web] {label} failed: url={url}, status={exc.code}, reason={exc.reason}")
     except (error.URLError, TimeoutError, OSError) as exc:
-        print(f"[honeypot-web] {label} failed: {exc}")
+        print(f"[honeypot-web] {label} failed: url={url}, error={exc}")
 
 
 def _post_ingest(payload: dict) -> None:

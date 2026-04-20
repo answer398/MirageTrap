@@ -640,6 +640,9 @@ export default {
       const match = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition || "");
       return match?.[1] || fallback;
     },
+    extractErrorMessage(error, fallback) {
+      return error?.message || fallback;
+    },
     runtimeStatusLabel(value) {
       const normalized = String(value || "").toLowerCase();
       return {
@@ -717,6 +720,8 @@ export default {
         this.honeypotForm.name = "";
         this.honeypotForm.exposed_port = this.selectedHoneypotCatalog?.default_exposed_port || 18080;
         await this.loadHoneypots();
+      } catch (error) {
+        window.alert(this.extractErrorMessage(error, "创建蜜罐失败"));
       } finally {
         this.honeypotBusy = false;
       }
@@ -726,6 +731,8 @@ export default {
       try {
         await this.request(`/api/honeypots/${instanceId}/start`, { method: "POST", body: {} });
         await this.loadHoneypots();
+      } catch (error) {
+        window.alert(this.extractErrorMessage(error, "启动蜜罐失败"));
       } finally {
         this.honeypotBusy = false;
       }
@@ -735,6 +742,8 @@ export default {
       try {
         await this.request(`/api/honeypots/${instanceId}/stop`, { method: "POST", body: {} });
         await this.loadHoneypots();
+      } catch (error) {
+        window.alert(this.extractErrorMessage(error, "停止蜜罐失败"));
       } finally {
         this.honeypotBusy = false;
       }
@@ -747,6 +756,8 @@ export default {
       try {
         await this.request(`/api/honeypots/${instanceId}`, { method: "DELETE" });
         await this.loadHoneypots();
+      } catch (error) {
+        window.alert(this.extractErrorMessage(error, "删除蜜罐失败"));
       } finally {
         this.honeypotBusy = false;
       }

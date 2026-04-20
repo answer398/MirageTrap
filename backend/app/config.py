@@ -27,17 +27,30 @@ class Config:
     SESSION_AGGREGATION_MINUTES = int(os.getenv("SESSION_AGGREGATION_MINUTES", "30"))
     EVIDENCE_STORAGE_DRIVER = os.getenv("EVIDENCE_STORAGE_DRIVER", "local")
     EVIDENCE_LOCAL_PATH = os.getenv("EVIDENCE_LOCAL_PATH", "instance/evidence")
+    GEOIP_ENABLED = os.getenv("GEOIP_ENABLED", "false").lower() == "true"
+    GEOIP_CITY_DB_PATH = os.getenv("GEOIP_CITY_DB_PATH", "instance/geoip/GeoLite2-City.mmdb")
+    GEOIP_ASN_DB_PATH = os.getenv("GEOIP_ASN_DB_PATH", "instance/geoip/GeoLite2-ASN.mmdb")
+    ATTACK_RULESET_PATHS = tuple(
+        item.strip()
+        for item in os.getenv("ATTACK_RULESET_PATHS", "rules").split(",")
+        if item.strip()
+    )
     AUTH_RATE_LIMIT_ATTEMPTS = int(os.getenv("AUTH_RATE_LIMIT_ATTEMPTS", "10"))
     AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300"))
     HONEYPOT_ORCHESTRATION_ENABLED = os.getenv("HONEYPOT_ORCHESTRATION_ENABLED", "false").lower() == "true"
     HONEYPOT_CONTROLLER_BASE_URL = os.getenv("HONEYPOT_CONTROLLER_BASE_URL", "http://backend-api:15000")
+    HONEYPOT_CONTROLLER_PUBLIC_BASE_URL = os.getenv("HONEYPOT_CONTROLLER_PUBLIC_BASE_URL", "")
     HONEYPOT_DOCKER_HOST = os.getenv("HONEYPOT_DOCKER_HOST", "")
     HONEYPOT_DOCKER_NETWORK = os.getenv("HONEYPOT_DOCKER_NETWORK", "miragetrap-net")
+    HONEYPOT_DOCKER_ADD_HOST_GATEWAY = (
+        os.getenv("HONEYPOT_DOCKER_ADD_HOST_GATEWAY", "true").lower() == "true"
+    )
     HONEYPOT_DOCKER_READ_ONLY_ROOTFS = (
         os.getenv("HONEYPOT_DOCKER_READ_ONLY_ROOTFS", "false").lower() == "true"
     )
     HONEYPOT_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HONEYPOT_HEARTBEAT_INTERVAL_SECONDS", "15"))
     HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS = int(os.getenv("HONEYPOT_HEARTBEAT_TIMEOUT_SECONDS", "45"))
+    HONEYPOT_STARTUP_VERIFY_SECONDS = int(os.getenv("HONEYPOT_STARTUP_VERIFY_SECONDS", "6"))
 
     ADMIN_DEFAULT_USERNAME = os.getenv("ADMIN_DEFAULT_USERNAME", "admin")
     ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD", "Admin@123456")

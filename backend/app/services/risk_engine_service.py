@@ -1,153 +1,148 @@
 from __future__ import annotations
 
-import re
+from pathlib import Path
+
+from app.utils.web_request import parse_request_content, parse_response_content
+
+from .rule_loader import evaluate_condition, load_compiled_rules
 
 
 class RiskEngineService:
-    _WEB_VULN_PATTERNS = [
-        {
-            "event_type": "web_sqli",
+    _TYPE_CATALOG = {
+        "web_req": {
+            "title": "普通请求",
+            "description": "未命中高风险攻击规则，保留为普通 Web 请求。",
+        },
+        "web_sqli": {
             "title": "SQL 注入",
-            "description": "请求中出现 UNION SELECT、恒真条件、延时函数或 information_schema 等 SQL 注入特征。",
-            "score": 50,
-            "rule": "web_sqli",
-            "regex": re.compile(
-                r"(union\s+select|(\bor\b|\band\b)\s+\d+\s*=\s*\d+|sleep\s*\(|benchmark\s*\(|information_schema)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 SQL 语句拼接、注释、联合查询、延时函数等数据库攻击特征。",
         },
-        {
-            "event_type": "web_xss",
+        "web_xss": {
             "title": "跨站脚本",
-            "description": "请求中包含 script、javascript:、onerror/onload 等 XSS 注入特征。",
-            "score": 45,
-            "rule": "web_xss",
-            "regex": re.compile(
-                r"(<script\b|javascript:|onerror\s*=|onload\s*=|<img[^>]+onerror)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 script、事件处理器、javascript 协议或其他脚本注入特征。",
         },
-        {
-            "event_type": "web_path_traversal",
+        "web_path_traversal": {
             "title": "路径遍历",
-            "description": "请求中包含 ../、/etc/passwd、win.ini 等敏感路径遍历访问特征。",
-            "score": 35,
-            "rule": "web_path_traversal",
-            "regex": re.compile(
-                r"(\.\./|\.\.\\|/etc/passwd|/windows/win\.ini|/proc/self/environ)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现目录回溯、敏感文件探测或本地文件包含特征。",
         },
-        {
-            "event_type": "web_cmd_exec",
+        "web_cmd_exec": {
             "title": "命令执行",
-            "description": "请求中包含 shell 管道、命令拼接、反引号或 powershell 等命令执行特征。",
-            "score": 48,
-            "rule": "web_cmd_exec",
-            "regex": re.compile(
-                r"(;\s*(cat|id|whoami|uname|wget|curl)\b|\|\s*(cat|id|whoami)\b|`[^`]+`|\$\(.*\)|cmd\s*=|/bin/sh|powershell)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 shell 元字符、命令替换或系统命令执行特征。",
         },
-        {
-            "event_type": "web_file_upload",
+        "web_file_upload": {
             "title": "恶意文件上传",
-            "description": "请求中包含 multipart、文件名、PHP WebShell 或表单上传头部等可疑上传特征。",
-            "score": 35,
-            "rule": "web_file_upload",
-            "regex": re.compile(
-                r"(multipart/form-data|filename\s*=|\.php[3457]?(\b|$)|webshell|content-disposition:\s*form-data)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 multipart 上传、可执行脚本扩展名或 WebShell 载荷特征。",
         },
-        {
-            "event_type": "web_ssrf",
+        "web_ssrf": {
             "title": "服务端请求伪造",
-            "description": "请求中出现元数据地址、内网地址或 file/gopher/dict 等 SSRF 常见探测目标。",
-            "score": 35,
-            "rule": "web_ssrf",
-            "regex": re.compile(
-                r"(url\s*=\s*https?://|169\.254\.169\.254|localhost:|127\.0\.0\.1|file://|gopher://|dict://)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中包含内网资源、云元数据或危险协议等 SSRF 特征。",
         },
-        {
-            "event_type": "web_ssti",
+        "web_ssti": {
             "title": "模板注入",
-            "description": "请求中出现 {{ }}, ${ }, <% %> 或 __class__ 等服务端模板注入特征。",
-            "score": 35,
-            "rule": "web_ssti",
-            "regex": re.compile(
-                r"(\{\{.*\}\}|\$\{.*\}|<%=?\s*.*\s*%>|__class__|config\[['\"])",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 Jinja、Twig、Velocity、EL 等服务端模板表达式特征。",
         },
-        {
-            "event_type": "web_xxe",
+        "web_xxe": {
             "title": "XML 外部实体",
-            "description": "请求中包含 XML 外部实体、非 HTML DOCTYPE 或 file:// 等 XXE 注入特征。",
-            "score": 40,
-            "rule": "web_xxe",
-            "regex": re.compile(
-                r"(<!doctype\s+(?!html\b)|<!entity|system\s+[\"']file://|expect://)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现 DOCTYPE、ENTITY、SYSTEM file:// 等 XXE 特征。",
         },
-        {
-            "event_type": "web_scan",
+        "web_scan": {
             "title": "恶意扫描",
-            "description": "请求中包含 sqlmap、nikto、dirsearch、gobuster 等自动化扫描器特征。",
-            "score": 20,
-            "rule": "web_scan",
-            "regex": re.compile(
-                r"(sqlmap|acunetix|nikto|nmap|masscan|wpscan|dirsearch|gobuster|zgrab)",
-                re.IGNORECASE,
-            ),
+            "description": "请求中出现自动化扫描器、目录爆破或漏洞探测路径特征。",
         },
-    ]
+    }
 
-    _RULE_INDEX = {item["rule"]: item for item in _WEB_VULN_PATTERNS}
+    _EVENT_PRIORITY = {
+        "web_sqli": 90,
+        "web_cmd_exec": 85,
+        "web_xxe": 80,
+        "web_ssrf": 75,
+        "web_ssti": 74,
+        "web_file_upload": 73,
+        "web_path_traversal": 70,
+        "web_xss": 68,
+        "web_scan": 40,
+        "web_req": 0,
+    }
+
+    def __init__(
+        self,
+        *,
+        ruleset_paths: tuple[str, ...] | list[str] | None = None,
+        base_dir: str | Path | None = None,
+    ):
+        backend_root = Path(base_dir or Path(__file__).resolve().parents[2]).resolve()
+        self._rules = load_compiled_rules(
+            ruleset_paths=tuple(ruleset_paths or ()),
+            base_dir=backend_root,
+        )
+        self._rule_index = {item.rule_id: item.to_meta() for item in self._rules}
 
     def evaluate(
         self,
         *,
         event_type: str,
         honeypot_type: str,
-        request_content: str | None,
-        response_content: str | None,
+        request_record: dict | None = None,
+        response_record: dict | None = None,
+        request_content: str | None = None,
+        response_content: str | None = None,
     ) -> dict:
-        score = 5
-        matched_rules: list[str] = []
-        detected_event_type: str | None = None
         normalized_event_type = str(event_type or "").strip().lower() or "web_req"
-        content = f"{request_content or ''} {(response_content or '')}"
-        content_lower = content.lower()
+        if honeypot_type != "web":
+            return {
+                "risk_score": 5,
+                "risk_level": "low",
+                "matched_rules": [],
+                "detected_event_type": normalized_event_type,
+            }
 
-        if honeypot_type == "web":
-            for item in self._WEB_VULN_PATTERNS:
-                if item["regex"].search(content):
-                    score += int(item["score"])
-                    matched_rules.append(str(item["rule"]))
-                    if detected_event_type is None:
-                        detected_event_type = str(item["event_type"])
+        compiled_request = request_record or parse_request_content(request_content)
+        compiled_response = response_record or parse_response_content(response_content)
 
-        if "http://" in content_lower or "https://" in content_lower:
-            score += 8
-            matched_rules.append("external_reference")
+        score = 5
+        type_scores: dict[str, int] = {}
+        matched_rules = []
 
+        for rule in self._rules:
+            if not evaluate_condition(
+                rule.match,
+                request_record=compiled_request,
+                response_record=compiled_response,
+            ):
+                continue
+
+            if rule.exclude and evaluate_condition(
+                rule.exclude,
+                request_record=compiled_request,
+                response_record=compiled_response,
+            ):
+                continue
+
+            matched_rules.append(rule)
+            score += int(rule.score)
+            type_scores[rule.event_type] = type_scores.get(rule.event_type, 0) + int(rule.score)
+
+        matched_rules.sort(key=lambda item: (-item.score, -self._EVENT_PRIORITY.get(item.event_type, 0), item.rule_id))
         score = min(score, 100)
+
+        detected_event_type = normalized_event_type
+        if type_scores:
+            detected_event_type = max(
+                type_scores.items(),
+                key=lambda item: (item[1], self._EVENT_PRIORITY.get(item[0], 0)),
+            )[0]
 
         return {
             "risk_score": score,
             "risk_level": self._to_level(score),
-            "matched_rules": matched_rules,
-            "detected_event_type": detected_event_type or normalized_event_type,
+            "matched_rules": [item.rule_id for item in matched_rules],
+            "detected_event_type": detected_event_type,
         }
 
     def describe_rules(self, rule_keys: list[str] | tuple[str, ...] | None) -> list[dict]:
         items = []
         for rule_key in rule_keys or []:
-            meta = self._RULE_INDEX.get(str(rule_key))
+            meta = self._rule_index.get(str(rule_key))
             if meta is None:
                 items.append(
                     {
@@ -157,24 +152,17 @@ class RiskEngineService:
                     }
                 )
                 continue
-            items.append(
-                {
-                    "key": meta["rule"],
-                    "title": meta["title"],
-                    "description": meta["description"],
-                }
-            )
+            items.append(meta)
         return items
 
     def type_catalog(self) -> list[dict]:
         return [
             {
-                "event_type": item["event_type"],
-                "title": item["title"],
-                "description": item["description"],
-                "rule": item["rule"],
+                "event_type": event_type,
+                "title": meta["title"],
+                "description": meta["description"],
             }
-            for item in self._WEB_VULN_PATTERNS
+            for event_type, meta in self._TYPE_CATALOG.items()
         ]
 
     @staticmethod

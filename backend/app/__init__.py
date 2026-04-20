@@ -1,4 +1,21 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def _load_local_env() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    candidate_paths = [
+        repo_root / ".env",
+        repo_root / "backend" / ".env",
+    ]
+    for env_path in candidate_paths:
+        if env_path.is_file():
+            load_dotenv(env_path, override=False)
+
+
+_load_local_env()
 
 import click
 from flask import Flask, request

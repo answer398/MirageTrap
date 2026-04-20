@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -50,16 +51,20 @@ class HoneypotService:
         honeypot_repository: HoneypotRepository,
         runtime_adapter,
         controller_base_url: str,
+        controller_public_base_url: str,
         control_token: str,
         ingest_token: str,
         heartbeat_timeout_seconds: int = 45,
+        startup_verify_seconds: int = 6,
     ):
         self._honeypot_repository = honeypot_repository
         self._runtime_adapter = runtime_adapter
         self._controller_base_url = controller_base_url
+        self._controller_public_base_url = controller_public_base_url
         self._control_token = control_token
         self._ingest_token = ingest_token
         self._heartbeat_timeout_seconds = heartbeat_timeout_seconds
+        self._startup_verify_seconds = max(int(startup_verify_seconds), 0)
 
     def catalog(self) -> dict:
         return {"items": [dict(item) for item in self._CATALOG]}
@@ -152,7 +157,12 @@ class HoneypotService:
 
         item.desired_state = "running"
         self._apply_runtime_payload(item, runtime)
+        item.last_error = None
         self._honeypot_repository.save(item)
+
+        startup_error = self._verify_started_instance(item)
+        if startup_error:
+            return None, startup_error, 502
         return self._serialize(item), None, None
 
     def stop_instance(self, instance_id: int) -> tuple[dict | None, str | None, int | None]:
@@ -330,9 +340,51 @@ class HoneypotService:
                 summary[heartbeat_state] += 1
         return summary
 
+    def _verify_started_instance(self, item: HoneypotInstance) -> str | None:
+        if self._startup_verify_seconds <= 0:
+            return None
+
+        deadline = time.monotonic() + self._startup_verify_seconds
+        current = item
+        while True:
+            current = self._sync_runtime_state(current)
+            if current.runtime_status in {"exited", "missing", "stopped"}:
+                current.desired_state = "stopped"
+                current.last_error = f"蜜罐容器启动失败，当前状态: {current.runtime_status}"
+                self._honeypot_repository.save(current)
+                return current.last_error
+
+            if (
+                current.last_heartbeat_at is not None
+                and current.heartbeat_state(timeout_seconds=self._heartbeat_timeout_seconds) == "online"
+            ):
+                current.last_error = None
+                self._honeypot_repository.save(current)
+                return None
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.5, remaining))
+
+        timeout_message = f"蜜罐容器已启动，但在 {self._startup_verify_seconds} 秒内未收到心跳"
+        try:
+            runtime = self._runtime_adapter.stop_instance(current)
+            current.desired_state = "stopped"
+            self._apply_runtime_payload(current, runtime)
+        except Exception as exc:  # noqa: BLE001
+            current.last_error = str(exc)
+            self._honeypot_repository.save(current)
+            return timeout_message
+
+        current.last_error = timeout_message
+        self._honeypot_repository.save(current)
+        return timeout_message
+
     def _control_plane_payload(self) -> dict:
         return {
             "controller_base_url": self._controller_base_url.rstrip("/"),
+            "controller_public_base_url": self._controller_public_base_url.rstrip("/"),
             "control_token": self._control_token,
             "ingest_token": self._ingest_token,
         }

@@ -1,3 +1,9 @@
+from app.infrastructure.geoip import (
+    GeoIPLookupAdapter,
+    MaxMindGeoIPLookupAdapter,
+    NoopGeoIPLookupAdapter,
+    build_geoip_lookup_adapter,
+)
 from app.infrastructure.honeypot_runtime import (
     DockerHoneypotRuntimeAdapter,
     HoneypotRuntimeAdapter,
@@ -17,6 +23,10 @@ from app.infrastructure.security_store import (
 )
 
 __all__ = [
+    "GeoIPLookupAdapter",
+    "NoopGeoIPLookupAdapter",
+    "MaxMindGeoIPLookupAdapter",
+    "build_geoip_lookup_adapter",
     "HoneypotRuntimeAdapter",
     "NoopHoneypotRuntimeAdapter",
     "DockerHoneypotRuntimeAdapter",
