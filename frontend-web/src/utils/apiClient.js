@@ -38,7 +38,13 @@ async function safeFetch(url, options) {
   try {
     return await fetch(url, options);
   } catch (_error) {
-    throw new Error("请求失败，请检查 API Base、Vite 代理或后端 CORS 配置");
+    let target = url;
+    try {
+      target = new URL(url).origin;
+    } catch (_parseError) {
+      // ignore
+    }
+    throw new Error(`无法连接 ${target}，请检查控制层地址、服务监听和浏览器可达性`);
   }
 }
 

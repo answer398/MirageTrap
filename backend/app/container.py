@@ -13,6 +13,7 @@ from app.repositories import (
     HoneypotRepository,
 )
 from app.services import (
+    AttackCommandService,
     AttackIngestService,
     AttackQueryService,
     AuthService,
@@ -76,6 +77,11 @@ def init_container(app) -> None:
         event_repository=event_repository,
         risk_engine_service=risk_engine_service,
     )
+    attack_command_service = AttackCommandService(
+        event_repository=event_repository,
+        session_repository=session_repository,
+        evidence_repository=evidence_repository,
+    )
     replay_service = ReplayService(
         event_repository=event_repository,
         session_repository=session_repository,
@@ -105,6 +111,7 @@ def init_container(app) -> None:
         "session_service": session_service,
         "attack_ingest_service": attack_ingest_service,
         "attack_query_service": attack_query_service,
+        "attack_command_service": attack_command_service,
         "dashboard_service": dashboard_service,
         "replay_service": replay_service,
         "evidence_service": evidence_service,

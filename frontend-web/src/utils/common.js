@@ -18,10 +18,6 @@ export function getDefaultApiBase(configured) {
     return configuredBase;
   }
 
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return normalizeApiBase(window.location.origin);
-  }
-
   return "http://127.0.0.1:15000";
 }
 

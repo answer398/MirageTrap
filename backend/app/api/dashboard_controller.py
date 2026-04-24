@@ -12,8 +12,13 @@ dashboard_bp = Blueprint("dashboard", __name__)
 @dashboard_bp.get("/dashboard/overview")
 @jwt_required()
 def get_overview():
+    hours, _, error = _parse_window_args(default_limit=20)
+    if error:
+        return api_error(error, status=422, code="VALIDATION_ERROR")
+
     dashboard_service = get_service("dashboard_service")
-    data = dashboard_service.get_overview()
+    start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+    data = dashboard_service.get_overview(start_time=start_time)
     return api_success(data)
 
 
@@ -38,7 +43,7 @@ def get_trends():
 
     dashboard_service = get_service("dashboard_service")
     start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-    return api_success(dashboard_service.get_trends(start_time=start_time, bucket_hours=hours))
+    return api_success(dashboard_service.get_trends(start_time=start_time, window_hours=hours))
 
 
 @dashboard_bp.get("/dashboard/top-attackers")
@@ -71,8 +76,8 @@ def _parse_window_args(default_hours: int = 24, default_limit: int = 20) -> tupl
     hours = request.args.get("hours", default=default_hours, type=int)
     limit = request.args.get("limit", default=default_limit, type=int)
 
-    if hours is None or hours <= 0 or hours > 168:
-        return 0, 0, "hours 取值范围为 1~168"
+    if hours is None or hours <= 0 or hours > 720:
+        return 0, 0, "hours 取值范围为 1~720"
     if limit is None or limit <= 0 or limit > 200:
         return 0, 0, "limit 取值范围为 1~200"
 

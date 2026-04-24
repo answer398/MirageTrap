@@ -16,6 +16,10 @@ class AttackSessionRepository:
         db.session.commit()
         return session
 
+    def delete(self, session: AttackSession) -> None:
+        db.session.delete(session)
+        db.session.commit()
+
     def get_by_id(self, session_id: str) -> AttackSession | None:
         return db.session.get(AttackSession, session_id)
 

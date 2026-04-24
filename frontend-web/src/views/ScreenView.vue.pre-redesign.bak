@@ -1,166 +1,167 @@
 <template>
   <div class="screen-page">
     <div class="screen-stage">
+      <header class="screen-header">
+        <div class="title-block">
+          <p class="eyebrow">MirageTrap Situation Awareness</p>
+          <h1>Web 蜜罐全球态势感知平台</h1>
+          <p class="subtitle">Interactive Web Honeypot Global Situation Dashboard</p>
+        </div>
+
+        <div class="header-meta">
+          <div class="meta-line">时间 {{ nowText }}</div>
+          <div class="meta-line">用户 {{ username || "-" }}</div>
+          <div class="meta-line">
+            后端
+            <span class="status-pill" :class="statusTone">{{ backendStatusText }}</span>
+          </div>
+          <div class="meta-line">最近同步 {{ lastSyncText }}</div>
+          <div class="meta-actions">
+            <button class="action-btn" type="button" @click="refreshAll">刷新</button>
+            <a class="action-btn ghost" href="/console">控制台</a>
+            <button class="action-btn ghost" type="button" @click="logout">退出</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="kpi-strip">
+        <article v-for="item in overviewCards" :key="item.label" class="kpi-card">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+          <small>{{ item.note }}</small>
+        </article>
+      </section>
+
       <p v-if="errorText" class="error-banner">{{ errorText }}</p>
 
-      <section class="battlefield-shell">
-        <div class="map-stage">
-          <div id="world-map-chart" class="world-map"></div>
-        </div>
+      <section class="battle-grid">
+        <aside class="panel left-top">
+          <header class="panel-head">
+            <h2>请求 IP 来源</h2>
+            <small>Active Sources</small>
+          </header>
+          <div id="source-chart" class="chart-sm"></div>
+        </aside>
 
-        <div class="battlefield-tools">
-          <div class="battlefield-controls">
-            <div class="time-range-group" role="tablist" aria-label="时间范围">
-              <button
-                v-for="item in timeRangeOptions"
-                :key="item.hours"
-                type="button"
-                class="time-range-btn"
-                :class="{ active: selectedWindowHours === item.hours }"
-                :aria-pressed="selectedWindowHours === item.hours"
-                @click="setTimeRange(item.hours)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-            <label class="map-speed-control" for="map-rotate-speed">
-              <span>自转速度</span>
-              <input
-                id="map-rotate-speed"
-                type="range"
-                min="0.2"
-                max="4"
-                step="0.05"
-                :value="mapRotateSpeed"
-                @input="updateMapRotateSpeed"
-              />
-              <strong>{{ mapRotateSpeed.toFixed(2) }}x</strong>
-            </label>
-            <div class="map-legend">
-              <span><i class="dot source"></i>攻击来源</span>
-              <span><i class="dot home"></i>蜜罐中心</span>
-            </div>
+        <aside class="panel left-bottom">
+          <header class="panel-head">
+            <h2>攻击事件监测</h2>
+            <small>Recent Event Stream</small>
+          </header>
+          <div class="event-table-shell">
+            <table class="event-table">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>目标</th>
+                  <th>类型</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in recentRows" :key="`${item.id}-${item.time}`">
+                  <td>{{ item.source_ip }}</td>
+                  <td>{{ shorten(item.request_preview, 28) }}</td>
+                  <td>{{ typeLabel(item.event_type) }}</td>
+                </tr>
+                <tr v-if="recentRows.length === 0">
+                  <td colspan="3" class="empty-cell">暂无数据</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
+        </aside>
 
-        <div class="detail-hub" :class="{ open: Boolean(activeDetailPanel) }" @mouseleave="handleDetailHubLeave">
-          <nav class="module-dock" aria-label="态势详情模块">
-            <button
-              v-for="item in detailDockItems"
-              :key="item.key"
-              type="button"
-              class="module-tile"
-              :class="{ active: activeDetailPanel === item.key }"
-              :aria-pressed="activeDetailPanel === item.key"
-              @mouseenter="openDetailPanel(item.key)"
-              @focus="openDetailPanel(item.key)"
-              @click="toggleDetailPanel(item.key)"
-            >
-              <small>{{ item.short }}</small>
-              <strong>{{ item.value }}</strong>
-            </button>
-          </nav>
-
-          <aside
-            class="detail-drawer"
-            :class="{ open: Boolean(activeDetailPanel), 'drawer-wide': activeDetailPanel === 'events' }"
-          >
-            <header class="drawer-head">
-              <div>
-                <small>{{ activeDetailMeta?.eyebrow || "Details" }}</small>
-                <h3>{{ activeDetailMeta?.label || "态势细节" }}</h3>
-              </div>
-              <button class="drawer-close" type="button" @click="closeDetailPanel">收起</button>
-            </header>
-
-            <div class="drawer-stage">
-              <section class="drawer-panel" :class="{ active: activeDetailPanel === 'overview' }">
-                <div class="overview-grid">
-                  <article v-for="item in overviewCards" :key="item.label" class="overview-card">
-                    <span>{{ item.label }}</span>
-                    <strong>{{ item.value }}</strong>
-                  </article>
-                </div>
-
-                <section class="drawer-block">
-                  <header class="drawer-section-head">
-                    <div>
-                      <h4>来源热点</h4>
-                    </div>
-                  </header>
-                  <ul class="hotspot-list">
-                    <li v-for="item in hotspotPreview" :key="item.key">
-                      <span>{{ item.label }}</span>
-                      <strong>{{ fmtNum(item.attack_count) }}</strong>
-                    </li>
-                    <li v-if="hotspotPreview.length === 0" class="empty-line">暂无热点数据</li>
-                  </ul>
-                </section>
-              </section>
-
-              <section class="drawer-panel" :class="{ active: activeDetailPanel === 'sources' }">
-                <div id="source-chart" class="drawer-chart"></div>
-              </section>
-
-              <section class="drawer-panel" :class="{ active: activeDetailPanel === 'events' }">
-                <div class="event-table-shell">
-                  <table class="event-table">
-                    <thead>
-                      <tr>
-                        <th class="event-ip-cell">IP</th>
-                        <th class="event-region-cell">地区</th>
-                        <th class="event-target-cell">目标</th>
-                        <th class="event-type-cell">类型</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="item in recentRows" :key="`${item.id}-${item.time}`">
-                        <td class="event-ip-cell">{{ item.source_ip || "-" }}</td>
-                        <td class="event-region-cell" :title="item.location_label">{{ item.location_label }}</td>
-                        <td class="event-target-cell" :title="item.request_preview || '-'">
-                          {{ item.request_preview || "-" }}
-                        </td>
-                        <td class="event-type-cell">{{ typeLabel(item.event_type) }}</td>
-                      </tr>
-                      <tr v-if="recentRows.length === 0">
-                        <td colspan="4" class="empty-cell">暂无数据</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-
-              <section class="drawer-panel" :class="{ active: activeDetailPanel === 'types' }">
-                <div id="attack-type-chart" class="drawer-chart"></div>
-              </section>
+        <main class="panel map-panel">
+          <header class="map-head">
+            <div>
+              <h2>全球攻击态势</h2>
+              <small>Attack Lines and Hotspots</small>
             </div>
-          </aside>
-        </div>
-
-        <section class="trend-sheet-shell" :class="{ open: trendPanelOpen }">
-          <button class="trend-toggle-handle" type="button" @click="toggleTrendPanel">
-            <span class="trend-toggle-arrow">{{ trendPanelOpen ? "↓" : "↑" }}</span>
-            <strong>{{ trendPanelOpen ? "点击收起趋势" : "点击展开趋势" }}</strong>
-          </button>
-
-          <div class="trend-sheet">
-            <header class="trend-sheet-head">
-              <div>
-                <small>Trend Analysis</small>
-                <h3>攻击趋势统计</h3>
+            <div class="map-tools">
+              <label class="map-speed-control" for="map-rotate-speed">
+                <span>自转速度</span>
+                <input
+                  id="map-rotate-speed"
+                  type="range"
+                  min="0.2"
+                  max="4"
+                  step="0.05"
+                  :value="mapRotateSpeed"
+                  @input="updateMapRotateSpeed"
+                />
+                <strong>{{ mapRotateSpeed.toFixed(2) }}x</strong>
+              </label>
+              <div class="map-legend">
+                <span><i class="dot source"></i>攻击来源</span>
+                <span><i class="dot home"></i>蜜罐中心</span>
               </div>
-            </header>
-            <div id="trend-chart" class="trend-sheet-chart"></div>
+            </div>
+          </header>
+          <div class="map-stage">
+            <div id="world-map-chart" class="world-map"></div>
           </div>
-        </section>
+          <div class="map-summary">
+            <article>
+              <span>热点区域</span>
+              <strong>{{ fmtNum(mapSummary.region_count) }}</strong>
+            </article>
+            <article>
+              <span>窗口攻击</span>
+              <strong>{{ fmtNum(mapSummary.attack_total) }}</strong>
+            </article>
+            <article>
+              <span>高危事件</span>
+              <strong>{{ fmtNum(mapSummary.high_risk_total) }}</strong>
+            </article>
+          </div>
+        </main>
+
+        <aside class="panel right-top">
+          <header class="panel-head">
+            <h2>服务运行状态</h2>
+            <small>Service Health</small>
+          </header>
+          <ul class="service-list">
+            <li v-for="item in healthRows" :key="item.key">
+              <span>{{ item.key }}</span>
+              <strong :class="`tone-${item.status}`">{{ item.status }}</strong>
+            </li>
+          </ul>
+          <div class="hotspot-block">
+            <h3>来源热点</h3>
+            <ul class="hotspot-list">
+              <li v-for="item in hotspotRows.slice(0, 4)" :key="item.key">
+                <span>{{ item.label }}</span>
+                <strong>{{ fmtNum(item.attack_count) }}</strong>
+              </li>
+              <li v-if="hotspotRows.length === 0" class="empty-line">暂无热点数据</li>
+            </ul>
+          </div>
+        </aside>
+
+        <aside class="panel right-bottom">
+          <header class="panel-head">
+            <h2>攻击类型总览</h2>
+            <small>Attack Type Overview</small>
+          </header>
+          <div id="attack-type-chart" class="chart-sm"></div>
+        </aside>
+      </section>
+
+      <section class="panel bottom-panel">
+        <header class="panel-head">
+          <h2>攻击趋势统计</h2>
+          <small>24 Hour Attack Flow</small>
+        </header>
+        <div id="trend-chart" class="trend-chart"></div>
       </section>
     </div>
   </div>
 </template>
 
 <script>
-import { getDefaultApiBase, toDateTimeText } from "../utils/common";
-import { getAuthSession } from "../utils/authSession";
+import { getDefaultApiBase, toDateTimeText, toHourText } from "../utils/common";
+import { clearAuthSession, getAuthSession } from "../utils/authSession";
 import { requestJson } from "../utils/apiClient";
 
 const echarts = window.echarts;
@@ -173,13 +174,6 @@ const MAP_ATTACK_ARROW_COLOR = "#aafcff";
 const MAP_MAX_DEVICE_PIXEL_RATIO = 1.5;
 const MAP_MAX_RENDER_PIXELS = 2560 * 1440;
 const MAP_DPR_REINIT_THRESHOLD = 0.05;
-const TIME_RANGE_OPTIONS = [
-  { label: "24H", hours: 24 },
-  { label: "72H", hours: 72 },
-  { label: "7D", hours: 168 },
-  { label: "15D", hours: 360 },
-  { label: "30D", hours: 720 },
-];
 const MAP_INTERACTION_BLOCK_EVENTS = [
   "pointerdown",
   "pointerup",
@@ -320,14 +314,11 @@ export default {
         attack_total: 0,
         high_risk_total: 0,
       },
+      healthComponents: {},
       globeTextureUrl: "",
       mapRotateSpeed: 0.95,
       mapDevicePixelRatio: 1,
       mapInteractionCleanup: null,
-      activeDetailPanel: null,
-      trendPanelOpen: false,
-      selectedWindowHours: 24,
-      trendBucketHours: 1,
       charts: {
         sources: null,
         map: null,
@@ -349,26 +340,32 @@ export default {
     overviewCards() {
       return [
         {
-          label: `${this.activeTimeRange.label}攻击总数`,
+          label: "今日攻击总数",
           value: this.fmtNum(this.overview.today_attack_total),
           note: "Today attack total",
         },
         {
-          label: `${this.activeTimeRange.label}活跃攻击 IP`,
+          label: "活跃攻击 IP",
           value: this.fmtNum(this.overview.active_attack_ips),
           note: "Unique active source IPs",
         },
         {
-          label: `${this.activeTimeRange.label}Web 攻击数量`,
+          label: "Web 攻击数量",
           value: this.fmtNum(this.overview.web_attack_total),
           note: "Web honeypot captured attacks",
         },
         {
-          label: `${this.activeTimeRange.label}攻击类型数量`,
+          label: "攻击类型数量",
           value: this.fmtNum(this.overview.attack_type_count),
           note: `高危 ${this.fmtNum(this.overview.high_risk_total)} 条`,
         },
       ];
+    },
+    healthRows() {
+      return Object.keys(this.healthComponents || {}).map((key) => ({
+        key,
+        status: String(this.healthComponents[key]?.status || "unknown"),
+      }));
     },
     hotspotRows() {
       return this.hotspotPoints.map((item) => ({
@@ -380,93 +377,13 @@ export default {
       }));
     },
     recentRows() {
-      return (this.recentEvents || [])
-        .slice()
-        .reverse()
-        .slice(0, 12)
-        .map((item) => {
-          const locationParts = [item.country, item.region, item.city].filter(
-            (part) => part && String(part).trim() && String(part).trim().toLowerCase() !== "unknown",
-          );
-
-          return {
-            ...item,
-            location_label: locationParts.join(" / ") || "-",
-          };
-        });
-    },
-    detailDockItems() {
-      return [
-        {
-          key: "overview",
-          label: "全局总览",
-          short: "总览",
-          eyebrow: "Summary",
-          value: this.fmtNum(this.mapSummary.attack_total),
-          note: `${this.activeTimeRange.label}攻击总量`,
-        },
-        {
-          key: "sources",
-          label: "请求 IP 来源",
-          short: "请求IP",
-          eyebrow: "Sources",
-          value: this.fmtNum(this.overview.active_attack_ips),
-          note: `${this.activeTimeRange.label}活跃来源`,
-        },
-        {
-          key: "events",
-          label: "攻击事件监测",
-          short: "事件流",
-          eyebrow: "Events",
-          value: this.fmtNum(this.recentRows.length),
-          note: `${this.activeTimeRange.label}最近 12 条`,
-        },
-        {
-          key: "types",
-          label: "攻击类型总览",
-          short: "类型",
-          eyebrow: "Types",
-          value: this.fmtNum(this.overview.attack_type_count),
-          note: `${this.activeTimeRange.label}捕获类型`,
-        },
-      ];
-    },
-    timeRangeOptions() {
-      return TIME_RANGE_OPTIONS;
-    },
-    activeTimeRange() {
-      return (
-        TIME_RANGE_OPTIONS.find((item) => item.hours === this.selectedWindowHours) ||
-        TIME_RANGE_OPTIONS[0]
-      );
-    },
-    activeDetailMeta() {
-      return this.detailDockItems.find((item) => item.key === this.activeDetailPanel) || null;
-    },
-    hotspotPreview() {
-      return this.hotspotRows.slice(0, 5);
-    },
-  },
-  watch: {
-    nowText() {
-      this.emitNavState();
-    },
-    username() {
-      this.emitNavState();
-    },
-    backendStatusText() {
-      this.emitNavState();
-    },
-    lastSyncText() {
-      this.emitNavState();
+      return (this.recentEvents || []).slice().reverse().slice(0, 12);
     },
   },
   mounted() {
     this.restoreConfig();
     this.startClock();
-    this.emitNavState();
     window.addEventListener("resize", this.handleResize);
-    window.addEventListener("miragetrap:screen-refresh", this.handleScreenRefresh);
     this.$nextTick(() => {
       this.initCharts();
     });
@@ -489,38 +406,9 @@ export default {
       this.refreshTimer = null;
     }
     window.removeEventListener("resize", this.handleResize);
-    window.removeEventListener("miragetrap:screen-refresh", this.handleScreenRefresh);
     this.disposeCharts();
   },
   methods: {
-    emitNavState() {
-      if (typeof window === "undefined") {
-        return;
-      }
-
-      window.dispatchEvent(
-        new CustomEvent("miragetrap:screen-nav-state", {
-          detail: {
-            nowText: this.nowText,
-            username: this.username || DEFAULT_USERNAME,
-            backendStatusText: this.backendStatusText,
-            lastSyncText: this.lastSyncText,
-          },
-        }),
-      );
-    },
-    handleScreenRefresh() {
-      this.refreshAll();
-    },
-    setTimeRange(hours) {
-      const nextHours = Number(hours);
-      if (!Number.isFinite(nextHours) || nextHours <= 0 || this.selectedWindowHours === nextHours) {
-        return;
-      }
-
-      this.selectedWindowHours = nextHours;
-      this.refreshAll();
-    },
     fmtNum(value) {
       return safeNumber(value).toLocaleString("zh-CN");
     },
@@ -534,42 +422,9 @@ export default {
       const key = String(value || "").trim().toLowerCase();
       return RISK_LABELS[key] || value || "-";
     },
-    formatTrendAxisLabel(value) {
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) {
-        return "--";
-      }
-
-      const pad = (num) => String(num).padStart(2, "0");
-      const monthDay = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-      const hourText = `${pad(date.getHours())}:00`;
-
-      if (this.trendBucketHours >= 24) {
-        return monthDay;
-      }
-      if (this.selectedWindowHours <= 24) {
-        return hourText;
-      }
-      return `${monthDay} ${hourText}`;
-    },
-    formatTrendTooltipTitle(value) {
-      const start = new Date(value);
-      if (Number.isNaN(start.getTime())) {
-        return "--";
-      }
-
-      const end = new Date(start.getTime() + this.trendBucketHours * 60 * 60 * 1000);
-      const pad = (num) => String(num).padStart(2, "0");
-      const dateText = (date) =>
-        `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:00`;
-
-      if (this.trendBucketHours <= 1) {
-        return dateText(start);
-      }
-      if (this.trendBucketHours >= 24) {
-        return `${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-      }
-      return `${dateText(start)} ~ ${dateText(end)}`;
+    shorten(text, maxLength = 24) {
+      const value = String(text || "");
+      return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
     },
     updateMapRotateSpeed(event) {
       const nextSpeed = Number(event?.target?.value);
@@ -589,55 +444,6 @@ export default {
           },
         });
       }
-    },
-    openDetailPanel(key) {
-      if (this.activeDetailPanel === key) {
-        return;
-      }
-      this.trendPanelOpen = false;
-      this.activeDetailPanel = key;
-      this.$nextTick(() => {
-        this.handleResize();
-      });
-    },
-    toggleDetailPanel(key) {
-      const nextPanel = this.activeDetailPanel === key ? null : key;
-      if (this.activeDetailPanel === nextPanel) {
-        return;
-      }
-      this.trendPanelOpen = false;
-      this.activeDetailPanel = nextPanel;
-      this.$nextTick(() => {
-        this.handleResize();
-      });
-    },
-    handleDetailHubLeave() {
-      this.closeDetailPanel();
-    },
-    closeDetailPanel() {
-      if (!this.activeDetailPanel) {
-        return;
-      }
-      this.activeDetailPanel = null;
-      this.$nextTick(() => {
-        this.handleResize();
-      });
-    },
-    toggleTrendPanel() {
-      this.activeDetailPanel = null;
-      this.trendPanelOpen = !this.trendPanelOpen;
-      this.$nextTick(() => {
-        this.handleResize();
-      });
-    },
-    closeTrendPanel() {
-      if (!this.trendPanelOpen) {
-        return;
-      }
-      this.trendPanelOpen = false;
-      this.$nextTick(() => {
-        this.handleResize();
-      });
     },
     restoreConfig() {
       const session = getAuthSession();
@@ -1018,15 +824,6 @@ export default {
         }
         return deduped.map((item) => escapeHtml(item)).join(" / ");
       };
-      const renderLocationText = (country, city, fallbackName) => {
-        const parts = [country, city].filter(
-          (item) => item && String(item).trim() && String(item).trim().toLowerCase() !== "unknown",
-        );
-        if (parts.length) {
-          return escapeHtml(parts.join(" / "));
-        }
-        return escapeHtml(fallbackName || "-");
-      };
 
       // 保留攻击量到 value[3]，这样 3D 点大小仍可按强度变化。
       const points = (this.hotspotRows || []).slice(0, 12).map((item) => {
@@ -1053,15 +850,6 @@ export default {
         fromName: item.name,
         toName: "MirageTrap",
         value: item.attackCount,
-        country: item.country,
-        region: item.region,
-        city: item.city,
-        attackCount: item.attackCount,
-        uniqueIpCount: item.uniqueIpCount,
-        highRiskCount: item.highRiskCount,
-        latestEventType: item.latestEventType,
-        latestRiskLevel: item.latestRiskLevel,
-        latestAttackAt: item.latestAttackAt,
         coords: [
           [item.value[0], item.value[1]],
           MAP_HOME,
@@ -1082,26 +870,24 @@ export default {
           formatter(params) {
             const data = params.data || {};
             if (params.seriesType === "lines3D") {
-              return "";
+              return `${data.fromName || "-"} -> ${data.toName || "-"}<br/>攻击 ${safeNumber(data.value)} 次`;
             }
             if (params.seriesName === "Sources" && Array.isArray(data.value)) {
-              const locationText = renderLocationText(data.country, data.city, data.name);
+              const locationText =
+                [data.country, data.region, data.city].filter(Boolean).join(" / ") || data.name || "-";
               const sampleIps = renderSampleIps(data.primarySourceIp, data.sampleSourceIps);
               const attackTypes = renderAttackTypes(data.attackTypes);
               const latestAttackAt = data.latestAttackAt ? escapeHtml(dateText(data.latestAttackAt)) : "-";
               const latestRisk = data.latestRiskLevel ? escapeHtml(riskLabel(data.latestRiskLevel)) : "";
-              const latestType = data.latestEventType ? escapeHtml(typeLabel(data.latestEventType)) : "";
-              const latestMeta = [latestType, latestRisk ? `风险 ${latestRisk}` : "", latestAttackAt]
-                .filter(Boolean)
-                .join(" / ");
+              const latestSummary = latestRisk ? `${latestAttackAt} / 风险 ${latestRisk}` : latestAttackAt;
 
               return [
-                '<div style="max-width: 240px;">',
-                `<div><strong style="color:#f3feff;">${locationText}</strong></div>`,
-                `<div style="margin-top:6px;">高频IP：${sampleIps}</div>`,
+                '<div style="max-width: 260px;">',
+                `<div><strong style="color:#f3feff;">${escapeHtml(locationText)}</strong></div>`,
+                `<div style="margin-top:6px;">样本 IP：${sampleIps}</div>`,
                 `<div>攻击 ${safeNumber(data.attackCount)} 次 / 来源 IP ${safeNumber(data.uniqueIpCount)} 个 / 高危 ${safeNumber(data.highRiskCount)} 条</div>`,
                 attackTypes === "-" ? "" : `<div>高发类型：${attackTypes}</div>`,
-                latestMeta ? `<div>最近事件：${latestMeta}</div>` : "",
+                `<div>最近时间：${latestSummary}</div>`,
                 "</div>",
               ].join("");
             }
@@ -1149,7 +935,6 @@ export default {
             name: "Attack Paths",
             type: "lines3D",
             coordinateSystem: "globe",
-            silent: true,
             effect: {
               show: true,
               period: 5.4,
@@ -1171,7 +956,7 @@ export default {
             type: "scatter3D",
             coordinateSystem: "globe",
             symbolSize(value) {
-              return Math.max(6, Math.min(12, 6 + safeNumber(value[3]) * 0.18));
+              return Math.max(5, Math.min(10, 5 + safeNumber(value[3]) * 0.18));
             },
             itemStyle: {
               color: "rgba(128, 248, 255, 0.92)",
@@ -1311,18 +1096,6 @@ export default {
           backgroundColor: "rgba(8, 22, 42, 0.95)",
           borderColor: "rgba(76, 196, 255, 0.32)",
           textStyle: { color: "#e7fbff" },
-          formatter: (params) => {
-            const rows = Array.isArray(params) ? params : [params];
-            const title = this.formatTrendTooltipTitle(rows[0]?.axisValue);
-
-            return [
-              `<div>${title}</div>`,
-              ...rows.map(
-                (item) =>
-                  `<div>${item.marker}${escapeHtml(item.seriesName)}：${this.fmtNum(item.data)}</div>`,
-              ),
-            ].join("");
-          },
         },
         legend: {
           right: 12,
@@ -1331,12 +1104,8 @@ export default {
         xAxis: {
           type: "category",
           boundaryGap: false,
-          data: items.map((item) => item.time),
-          axisLabel: {
-            color: "rgba(149, 213, 255, 0.72)",
-            hideOverlap: true,
-            formatter: (value) => this.formatTrendAxisLabel(value),
-          },
+          data: items.map((item) => toHourText(item.time)),
+          axisLabel: { color: "rgba(149, 213, 255, 0.72)" },
           axisLine: { lineStyle: { color: "rgba(88, 140, 198, 0.2)" } },
         },
         yAxis: {
@@ -1380,23 +1149,23 @@ export default {
       this.backendStatusText = "同步中";
       this.errorText = "";
       try {
-        const query = { hours: this.selectedWindowHours };
-        const [overview, topAttackers, attackTypes, trends, globalMap] = await Promise.all([
-          this.request("/api/dashboard/overview", { query }),
-          this.request("/api/dashboard/top-attackers", { query: { ...query, limit: 8 } }),
-          this.request("/api/dashboard/attack-types", { query: { ...query, limit: 8 } }),
-          this.request("/api/dashboard/trends", { query }),
-          this.request("/api/dashboard/global-map", { query: { ...query, limit: 12 } }),
+        const [overview, topAttackers, attackTypes, trends, globalMap, health] = await Promise.all([
+          this.request("/api/dashboard/overview"),
+          this.request("/api/dashboard/top-attackers", { query: { hours: 24, limit: 8 } }),
+          this.request("/api/dashboard/attack-types", { query: { hours: 24, limit: 8 } }),
+          this.request("/api/dashboard/trends", { query: { hours: 24 } }),
+          this.request("/api/dashboard/global-map", { query: { hours: 24, limit: 12 } }),
+          this.request("/api/health/details", { withAuth: false }),
         ]);
 
         this.overview = overview;
         this.topAttackers = topAttackers.items || [];
         this.attackTypes = attackTypes.items || [];
         this.trends = trends.series || [];
-        this.trendBucketHours = Number(trends.bucket_hours || 1);
         this.hotspotPoints = globalMap.points || [];
         this.recentEvents = globalMap.recent_events || [];
         this.mapSummary = globalMap.summary || this.mapSummary;
+        this.healthComponents = health.components || {};
         this.lastSyncText = toDateTimeText(new Date().toISOString());
         this.backendStatusText = "已连接";
         this.$nextTick(() => {
@@ -1407,110 +1176,273 @@ export default {
         this.errorText = error.message || "拉取态势数据失败";
       }
     },
+    logout() {
+      clearAuthSession();
+      this.$router.replace({ path: "/login", query: { redirect: "/screen" } });
+    },
   },
 };
 </script>
 
 <style scoped>
 .screen-page {
-  box-sizing: border-box;
-  height: 100%;
-  min-height: 0;
-  padding: 12px 14px 16px;
-  overflow: hidden;
+  min-height: calc(100vh - 64px);
+  padding: 16px 18px 20px;
   background:
-    radial-gradient(circle at 18% 16%, rgba(40, 131, 201, 0.16), transparent 22%),
-    radial-gradient(circle at 84% 18%, rgba(36, 116, 255, 0.14), transparent 26%),
-    radial-gradient(circle at 50% 100%, rgba(9, 119, 176, 0.2), transparent 34%),
-    #07111f;
+    radial-gradient(circle at 20% 18%, rgba(40, 131, 201, 0.12), transparent 22%),
+    radial-gradient(circle at 82% 16%, rgba(45, 123, 255, 0.12), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(9, 119, 176, 0.18), transparent 30%),
+    #0b1628;
   color: #dff9ff;
   font-family: "Rajdhani", "Noto Sans SC", sans-serif;
 }
 
 .screen-stage {
-  width: min(1920px, 100%);
-  height: 100%;
+  width: min(1880px, 100%);
   margin: 0 auto;
   display: grid;
-  gap: 12px;
-  min-height: 0;
+  gap: 14px;
 }
 
-.error-banner {
+.screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 8px 6px 0;
+}
+
+.eyebrow {
   margin: 0;
-  padding: 10px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 120, 120, 0.24);
-  background: rgba(111, 24, 40, 0.42);
-  color: #ffd7d7;
+  color: #7bd7ff;
+  font-size: 12px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
 }
 
-.battlefield-shell {
+.title-block h1 {
+  margin: 8px 0 0;
+  font-size: clamp(30px, 3.6vw, 54px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: #e8fbff;
+  text-shadow: 0 0 18px rgba(84, 214, 255, 0.24);
+}
+
+.subtitle {
+  margin: 10px 0 0;
+  color: rgba(189, 232, 255, 0.72);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.header-meta {
+  min-width: 280px;
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.meta-line {
+  color: rgba(201, 239, 255, 0.78);
+  font-size: 13px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  min-width: 56px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 215, 255, 0.18);
+  background: rgba(14, 54, 95, 0.45);
+  box-shadow: inset 0 0 12px rgba(69, 155, 219, 0.14);
+}
+
+.status-pill.ok {
+  color: #6dffcb;
+}
+
+.status-pill.pending {
+  color: #ffd36f;
+}
+
+.status-pill.fail {
+  color: #ff957d;
+}
+
+.meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.action-btn {
+  appearance: none;
+  border: 1px solid rgba(100, 201, 255, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(17, 83, 153, 0.8), rgba(14, 43, 100, 0.76));
+  color: #dff9ff;
+  padding: 8px 14px;
+  text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+  box-shadow: inset 0 0 16px rgba(44, 149, 255, 0.18);
+}
+
+.action-btn.ghost {
+  background: rgba(11, 28, 54, 0.72);
+}
+
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kpi-card,
+.panel {
   position: relative;
-  min-height: 0;
-  height: 100%;
-  max-height: none;
-  overflow: hidden;
-  border-radius: 28px;
-  border: 1px solid rgba(92, 192, 255, 0.16);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(17, 57, 112, 0.24), transparent 26%),
-    radial-gradient(circle at 20% 18%, rgba(51, 142, 255, 0.08), transparent 24%),
-    radial-gradient(circle at 78% 20%, rgba(132, 255, 248, 0.08), transparent 20%),
-    linear-gradient(180deg, rgba(3, 10, 20, 0.94), rgba(4, 11, 20, 0.88));
+  border: 1px solid rgba(100, 201, 255, 0.18);
+  background: linear-gradient(180deg, rgba(9, 27, 52, 0.9), rgba(8, 20, 42, 0.82));
   box-shadow:
-    inset 0 0 80px rgba(48, 138, 255, 0.06),
-    0 28px 70px rgba(0, 0, 0, 0.34);
+    inset 0 0 20px rgba(44, 149, 255, 0.08),
+    0 16px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
 }
 
-.battlefield-shell::before,
-.battlefield-shell::after {
+.kpi-card::before,
+.panel::before {
   content: "";
   position: absolute;
   inset: 0;
+  border: 1px solid rgba(123, 215, 255, 0.06);
   pointer-events: none;
 }
 
-.battlefield-shell::before {
-  background:
-    radial-gradient(circle at 12% 20%, rgba(150, 248, 255, 0.32) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 82% 14%, rgba(150, 248, 255, 0.24) 0 1.2px, transparent 2px),
-    radial-gradient(circle at 74% 68%, rgba(150, 248, 255, 0.16) 0 1.1px, transparent 1.9px),
-    radial-gradient(circle at 28% 72%, rgba(150, 248, 255, 0.18) 0 1px, transparent 1.8px);
-  background-size: 240px 240px, 300px 300px, 280px 280px, 320px 320px;
-  opacity: 0.82;
+.kpi-card {
+  min-height: 106px;
+  padding: 18px 20px;
 }
 
-.battlefield-shell::after {
-  background:
-    radial-gradient(circle at 50% 54%, rgba(89, 198, 255, 0.16), transparent 34%),
-    radial-gradient(circle at 50% 54%, rgba(89, 198, 255, 0.08), transparent 48%);
-  mix-blend-mode: screen;
+.kpi-card span {
+  display: block;
+  color: rgba(171, 224, 255, 0.72);
+  font-size: 13px;
+}
+
+.kpi-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 34px;
+  color: #f1fdff;
+  line-height: 1;
+  text-shadow: 0 0 16px rgba(84, 214, 255, 0.2);
+}
+
+.kpi-card small {
+  display: block;
+  margin-top: 8px;
+  color: rgba(132, 196, 233, 0.68);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.battle-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-rows: 360px 320px;
+  gap: 14px;
+}
+
+.panel {
+  padding: 14px 16px;
+}
+
+.panel-head,
+.map-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.panel-head h2,
+.map-head h2 {
+  margin: 0;
+  color: #ecfbff;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+}
+
+.panel-head small,
+.map-head small {
+  color: rgba(154, 219, 255, 0.62);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.left-top {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.left-bottom {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.map-panel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  padding: 14px 18px 16px;
+}
+
+.right-top {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.right-bottom {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.chart-sm {
+  height: calc(100% - 36px);
+  min-height: 240px;
 }
 
 .map-stage {
   position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
+  height: calc(100% - 94px);
+  min-height: 560px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 24%, rgba(95, 243, 255, 0.18) 0 1.3px, transparent 2px),
-    radial-gradient(circle at 73% 18%, rgba(172, 255, 249, 0.16) 0 1px, transparent 1.9px),
-    radial-gradient(circle at 86% 62%, rgba(113, 244, 255, 0.14) 0 1.1px, transparent 2px),
-    radial-gradient(circle at 42% 78%, rgba(134, 255, 245, 0.12) 0 1px, transparent 1.8px),
-    linear-gradient(180deg, rgba(3, 8, 18, 0.08), rgba(2, 7, 15, 0.03));
+    radial-gradient(circle at 18% 24%, rgba(95, 243, 255, 0.16) 0 1.3px, transparent 2px),
+    radial-gradient(circle at 73% 18%, rgba(172, 255, 249, 0.14) 0 1px, transparent 1.9px),
+    radial-gradient(circle at 86% 62%, rgba(113, 244, 255, 0.12) 0 1.1px, transparent 2px),
+    radial-gradient(circle at 42% 78%, rgba(134, 255, 245, 0.1) 0 1px, transparent 1.8px),
+    linear-gradient(180deg, rgba(4, 12, 24, 0.16), rgba(3, 9, 18, 0.04));
   background-size: 180px 180px, 240px 240px, 220px 220px, 260px 260px, 100% 100%;
 }
 
 .map-stage::after {
   content: "";
   position: absolute;
-  left: -10%;
-  right: -10%;
-  bottom: 5%;
+  left: -8%;
+  right: -8%;
+  bottom: 18px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(90, 242, 255, 0.52), transparent);
+  background: linear-gradient(90deg, transparent, rgba(90, 242, 255, 0.72), transparent);
   box-shadow: 0 0 16px rgba(86, 244, 255, 0.42);
   pointer-events: none;
 }
@@ -1523,84 +1455,20 @@ export default {
   z-index: 1;
 }
 
-.battlefield-tools,
-.detail-hub,
-.module-dock,
-.detail-drawer {
-  position: absolute;
-  z-index: 2;
-}
-
-.battlefield-tools {
-  top: 22px;
-  right: 24px;
-  display: flex;
-  justify-content: flex-end;
-  width: min(72vw, 920px);
-}
-
-.battlefield-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.time-range-group {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 4px;
-  border: 1px solid rgba(101, 199, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(6, 20, 38, 0.68);
-  backdrop-filter: blur(16px);
-}
-
-.time-range-btn {
-  appearance: none;
-  min-width: 58px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(195, 236, 255, 0.72);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  transition:
-    border-color 180ms ease,
-    color 180ms ease,
-    background 180ms ease,
-    transform 180ms ease;
-}
-
-.time-range-btn:hover,
-.time-range-btn:focus-visible {
-  color: #effcff;
-  transform: translateY(-1px);
-}
-
-.time-range-btn.active {
-  border-color: rgba(120, 226, 255, 0.28);
-  background: linear-gradient(135deg, rgba(20, 89, 154, 0.86), rgba(9, 31, 67, 0.78));
-  color: #f2fdff;
-  box-shadow: inset 0 0 16px rgba(48, 176, 255, 0.16);
-}
-
 .map-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(101, 199, 255, 0.12);
-  background: rgba(6, 20, 38, 0.68);
+  gap: 14px;
   color: rgba(195, 236, 255, 0.74);
   font-size: 12px;
-  backdrop-filter: blur(16px);
+}
+
+.map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
 }
 
 .map-speed-control {
@@ -1608,13 +1476,12 @@ export default {
   grid-template-columns: auto minmax(96px, 128px) auto;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid rgba(101, 199, 255, 0.12);
+  padding: 6px 10px;
+  border: 1px solid rgba(100, 201, 255, 0.14);
   border-radius: 999px;
-  background: rgba(6, 20, 38, 0.7);
+  background: rgba(8, 24, 46, 0.72);
   color: rgba(195, 236, 255, 0.82);
   font-size: 12px;
-  backdrop-filter: blur(16px);
 }
 
 .map-speed-control span,
@@ -1658,434 +1525,55 @@ export default {
   box-shadow: 0 0 10px rgba(121, 255, 141, 0.74);
 }
 
-.detail-hub {
-  top: 24px;
-  left: 24px;
-  right: auto;
-  transform: none;
-  display: flex;
-  justify-content: flex-start;
-  align-items: flex-start;
-  width: 104px;
-  height: min(60vh, 620px);
-  overflow: visible;
-  pointer-events: auto;
-  transition: width 220ms ease;
-}
-
-.detail-hub::after {
-  content: "";
-  position: absolute;
-  top: 5%;
-  bottom: 5%;
-  left: -10px;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(100, 218, 255, 0.44), transparent);
-  box-shadow: 0 0 18px rgba(79, 209, 255, 0.22);
-  pointer-events: none;
-}
-
-.detail-hub.open {
-  width: min(640px, 48vw);
-}
-
-.module-dock,
-.detail-drawer {
-  pointer-events: auto;
-}
-
-.module-dock {
-  top: 0;
-  left: 0;
-  right: auto;
-  transform: none;
+.map-summary {
   display: grid;
-  justify-items: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-}
-
-.module-tile {
-  appearance: none;
-  position: relative;
-  width: 84px;
-  min-height: 78px;
-  padding: 12px 10px;
-  border: 1px solid rgba(101, 199, 255, 0.12);
-  border-left: 0;
-  border-radius: 0 18px 18px 0;
-  background: linear-gradient(180deg, rgba(7, 20, 37, 0.82), rgba(5, 14, 28, 0.54));
-  color: #dff9ff;
-  text-align: left;
-  cursor: pointer;
-  box-shadow:
-    inset 0 0 24px rgba(52, 158, 255, 0.05),
-    0 16px 32px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(16px);
-  overflow: hidden;
-  transform-origin: left center;
-  transition:
-    width 180ms ease,
-    transform 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background 180ms ease;
-}
-
-.module-tile:hover,
-.module-tile:focus-visible,
-.module-tile.active {
-  width: 116px;
-  transform: none;
-  border-color: rgba(120, 226, 255, 0.3);
-  box-shadow:
-    inset 0 0 28px rgba(83, 186, 255, 0.08),
-    0 18px 34px rgba(0, 0, 0, 0.2);
-}
-
-.module-tile small {
-  display: block;
-  color: rgba(131, 224, 255, 0.64);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
-.module-tile strong {
-  display: block;
   margin-top: 10px;
-  color: #f2fdff;
-  font-size: 20px;
-  line-height: 1;
-  white-space: nowrap;
 }
 
-.detail-drawer {
-  top: 0;
-  left: 104px;
-  right: auto;
-  width: min(420px, 32vw);
-  height: min(60vh, 620px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 24px;
-  border: 1px solid rgba(101, 199, 255, 0.14);
-  background: linear-gradient(180deg, rgba(6, 19, 36, 0.9), rgba(4, 12, 24, 0.8));
-  box-shadow:
-    inset 0 0 32px rgba(53, 162, 255, 0.06),
-    0 30px 60px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(20px);
-  opacity: 0;
-  transform: translate(-24px, 0);
-  pointer-events: none;
-  transition:
-    transform 240ms ease,
-    opacity 220ms ease;
+.map-summary article {
+  padding: 12px 14px;
+  border: 1px solid rgba(100, 201, 255, 0.12);
+  background: rgba(12, 33, 63, 0.56);
 }
 
-.detail-drawer.open {
-  opacity: 1;
-  transform: translate(0, 0);
-  pointer-events: auto;
-}
-
-.detail-drawer.drawer-wide {
-  width: min(860px, 62vw);
-}
-
-.trend-sheet-shell {
-  position: absolute;
-  left: 24px;
-  right: 24px;
-  bottom: 24px;
-  z-index: 2;
-  height: min(362px, 40vh);
-  padding-top: 44px;
-  pointer-events: none;
-  transform: translateY(calc(100% - 44px));
-  transition: transform 220ms ease;
-}
-
-.trend-sheet-shell.open {
-  transform: translateY(0);
-}
-
-.trend-toggle-handle {
-  appearance: none;
-  position: absolute;
-  top: 0;
-  left: 50%;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid rgba(101, 199, 255, 0.16);
-  border-bottom: 0;
-  border-radius: 18px 18px 0 0;
-  background: linear-gradient(180deg, rgba(8, 24, 45, 0.82), rgba(5, 15, 29, 0.58));
-  color: #dff9ff;
-  cursor: pointer;
-  font: inherit;
-  backdrop-filter: blur(16px);
-  pointer-events: auto;
-  z-index: 1;
-  transform: translateX(-50%);
-  transition:
-    border-color 180ms ease,
-    background 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.trend-toggle-handle:hover,
-.trend-toggle-handle:focus-visible {
-  border-color: rgba(120, 226, 255, 0.32);
-  box-shadow: inset 0 0 18px rgba(83, 186, 255, 0.08);
-}
-
-.trend-toggle-arrow {
-  color: #7ff8ff;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.trend-toggle-handle strong {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.trend-sheet {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 24px;
-  border: 1px solid rgba(101, 199, 255, 0.12);
-  background: linear-gradient(180deg, rgba(6, 19, 36, 0.76), rgba(4, 12, 24, 0.56));
-  box-shadow:
-    inset 0 0 32px rgba(53, 162, 255, 0.04),
-    0 24px 50px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
-  pointer-events: none;
-}
-
-.trend-sheet-shell.open .trend-sheet {
-  pointer-events: auto;
-}
-
-.trend-sheet-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid rgba(101, 199, 255, 0.08);
-}
-
-.trend-sheet-head small {
-  color: rgba(143, 226, 255, 0.58);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.trend-sheet-head h3 {
-  margin: 6px 0 0;
-  color: #f1fdff;
-  font-size: 22px;
-  letter-spacing: 0.08em;
-}
-
-.trend-sheet-chart {
-  flex: 1;
-  min-height: 0;
-}
-
-.drawer-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 18px 18px 14px;
-  border-bottom: 1px solid rgba(101, 199, 255, 0.08);
-}
-
-.drawer-head small,
-.drawer-section-head small {
-  color: rgba(143, 226, 255, 0.58);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.drawer-head h3,
-.drawer-section-head h4 {
-  margin: 6px 0 0;
-  color: #f1fdff;
-  letter-spacing: 0.08em;
-}
-
-.drawer-head h3 {
-  font-size: 24px;
-}
-
-.drawer-section-head h4 {
-  font-size: 16px;
-}
-
-.drawer-close {
-  appearance: none;
-  border: 1px solid rgba(101, 199, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(8, 24, 46, 0.64);
-  color: #dff9ff;
-  padding: 8px 12px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.drawer-stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.drawer-panel {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(12px);
-  transition:
-    opacity 180ms ease,
-    transform 180ms ease,
-    visibility 180ms ease;
-}
-
-.drawer-panel.active {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.drawer-block {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 18px;
-  border: 1px solid rgba(101, 199, 255, 0.1);
-  background: rgba(8, 23, 43, 0.58);
-  padding: 14px 14px 12px;
-}
-
-.drawer-section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.overview-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 64px;
-  padding: 12px 16px;
-  border-radius: 16px;
-  border: 1px solid rgba(101, 199, 255, 0.1);
-  background: rgba(8, 22, 41, 0.62);
-}
-
-.overview-card span {
+.map-summary span {
   display: block;
-  flex: 1;
-  min-width: 0;
   color: rgba(171, 224, 255, 0.72);
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12px;
 }
 
-.overview-card strong {
+.map-summary strong {
   display: block;
-  flex: 0 0 auto;
-  margin-top: 0;
+  margin-top: 6px;
+  font-size: 26px;
   color: #f1fdff;
-  font-size: 28px;
-  line-height: 1;
-}
-
-.drawer-chart,
-.event-table-shell {
-  flex: 1;
-  min-height: 0;
-}
-
-.drawer-chart {
-  min-height: 280px;
 }
 
 .event-table-shell {
+  height: calc(100% - 38px);
   overflow: auto;
   scrollbar-width: thin;
 }
 
 .event-table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
+  table-layout: fixed;
   font-size: 12px;
 }
 
 .event-table th,
 .event-table td {
-  padding: 10px 8px;
+  padding: 8px 6px;
   border-bottom: 1px solid rgba(100, 201, 255, 0.1);
   text-align: left;
   color: #cfefff;
-  white-space: nowrap;
-  word-break: normal;
-}
-
-.event-ip-cell {
-  min-width: 148px;
-}
-
-.event-region-cell {
-  min-width: 180px;
-}
-
-.event-target-cell {
-  min-width: 360px;
-}
-
-.event-type-cell {
-  min-width: 112px;
+  word-break: break-word;
 }
 
 .event-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: rgba(5, 16, 31, 0.96);
   color: rgba(171, 224, 255, 0.72);
   font-weight: 600;
 }
@@ -2095,177 +1583,122 @@ export default {
   color: rgba(171, 224, 255, 0.48);
 }
 
+.service-list,
 .hotspot-list {
-  flex: 1;
   list-style: none;
   padding: 0;
   margin: 0;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
 }
 
+.service-list li,
 .hotspot-list li {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(100, 201, 255, 0.1);
   color: #dff9ff;
-  min-width: 0;
 }
 
-.hotspot-list li span {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.tone-up {
+  color: #6dffcb;
 }
 
-.hotspot-list li strong {
-  flex: 0 0 auto;
+.tone-degraded {
+  color: #ffd36f;
 }
 
-.hotspot-list li:last-child {
-  border-bottom: 0;
+.tone-down {
+  color: #ff957d;
+}
+
+.tone-unknown {
+  color: rgba(171, 224, 255, 0.52);
+}
+
+.hotspot-block {
+  margin-top: 16px;
+}
+
+.hotspot-block h3 {
+  margin: 0 0 8px;
+  color: #ecfbff;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.bottom-panel {
+  padding-bottom: 8px;
+}
+
+.trend-chart {
+  height: 220px;
+}
+
+.error-banner {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 120, 120, 0.24);
+  background: rgba(111, 24, 40, 0.46);
+  color: #ffd7d7;
 }
 
 @media (max-width: 1400px) {
-  .detail-hub {
-    width: min(560px, 48vw);
-  }
-
-  .detail-drawer {
-    width: min(388px, 34vw);
+  .battle-grid {
+    grid-template-columns: 280px minmax(0, 1fr) 280px;
   }
 }
 
 @media (max-width: 1100px) {
   .screen-page {
-    padding: 10px;
+    padding: 12px;
   }
 
-  .battlefield-shell {
-    min-height: 0;
-    height: 100%;
+  .screen-header,
+  .kpi-strip,
+  .battle-grid {
+    grid-template-columns: 1fr;
   }
 
-  .battlefield-tools {
-    top: 24px;
-    left: auto;
-    right: 24px;
-    width: min(68vw, 760px);
+  .screen-header {
+    flex-direction: column;
   }
 
-  .battlefield-controls {
-    justify-content: flex-end;
+  .header-meta {
+    justify-items: start;
   }
 
-  .trend-sheet-shell {
-    left: 20px;
-    right: 20px;
-  }
-}
-
-@media (max-width: 768px) {
-  .screen-page {
-    min-height: auto;
+  .meta-actions {
+    justify-content: flex-start;
   }
 
-  .battlefield-shell {
-    min-height: 0;
-    height: 100%;
-    border-radius: 24px;
+  .map-head {
+    align-items: flex-start;
   }
 
-  .battlefield-tools,
-  .detail-hub {
-    left: 16px;
-    right: 16px;
-  }
-
-  .battlefield-tools {
-    top: 16px;
-  }
-
-  .battlefield-controls {
-    width: 100%;
-  }
-
-  .time-range-group,
-  .map-speed-control,
-  .map-legend {
+  .map-tools {
     width: 100%;
     justify-content: flex-start;
   }
 
-  .detail-hub {
-    top: auto;
-    bottom: 16px;
-    transform: none;
-    width: calc(100% - 32px);
-    height: 420px;
+  .battle-grid {
+    grid-template-rows: auto;
   }
 
-  .detail-hub.open {
-    width: calc(100% - 32px);
+  .left-top,
+  .left-bottom,
+  .map-panel,
+  .right-top,
+  .right-bottom {
+    grid-column: auto;
+    grid-row: auto;
   }
 
-  .module-dock {
-    top: auto;
-    left: 0;
-    right: 0;
-    transform: none;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    bottom: 16px;
-    gap: 8px;
+  .map-stage {
+    min-height: 420px;
   }
 
-  .module-tile,
-  .module-tile:hover,
-  .module-tile:focus-visible,
-  .module-tile.active {
-    width: 100%;
-    min-height: 96px;
-    transform: none;
-    border-left: 1px solid rgba(101, 199, 255, 0.12);
-    border-right: 1px solid rgba(101, 199, 255, 0.12);
-    border-radius: 18px 18px 0 0;
-  }
-
-  .detail-drawer {
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    height: calc(100% - 206px);
-    transform: translateY(24px);
-  }
-
-  .detail-drawer.drawer-wide {
-    width: 100%;
-  }
-
-  .detail-drawer.open {
-    transform: translateY(0);
-  }
-
-  .trend-sheet-shell {
-    left: 16px;
-    right: 16px;
-    bottom: 16px;
-    height: min(312px, 38%);
-    padding-top: 44px;
-    transform: translateY(calc(100% - 44px));
-  }
-
-  .trend-toggle-handle {
-    left: 50%;
-  }
-
-  .overview-grid {
+  .map-summary {
     grid-template-columns: 1fr;
   }
 }

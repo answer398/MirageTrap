@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -72,10 +73,20 @@ def _configure_cors(app: Flask) -> None:
     allowed_origins = set(app.config.get("CORS_ALLOWED_ORIGINS", ()) or ())
     allow_all = "*" in allowed_origins
 
+    def _normalize_loopback_host(host: str) -> str:
+        value = (host or "").strip().lower()
+        return "localhost" if value in {"127.0.0.1", "::1"} else value
+
+    def _is_same_host_origin(origin: str) -> bool:
+        parsed_origin = urlparse(origin or "")
+        origin_host = _normalize_loopback_host(parsed_origin.hostname or "")
+        request_host = _normalize_loopback_host((request.host or "").split(":", 1)[0])
+        return bool(origin_host and request_host and origin_host == request_host)
+
     def _is_allowed(origin: str) -> bool:
         if allow_all:
             return True
-        return origin in allowed_origins
+        return origin in allowed_origins or _is_same_host_origin(origin)
 
     def _apply_headers(response):
         if not request.path.startswith("/api/"):
@@ -133,6 +144,25 @@ def _register_cli_commands(app: Flask) -> None:
         db.create_all()
         _ensure_default_admin(app)
         click.echo("Database initialized.")
+
+    @app.cli.command("sync-default-admin")
+    def sync_default_admin_command():
+        username = app.config["ADMIN_DEFAULT_USERNAME"]
+        password = app.config["ADMIN_DEFAULT_PASSWORD"]
+
+        user = AdminUser.query.filter_by(username=username).first()
+        created = user is None
+
+        if created:
+            user = AdminUser(username=username)
+            db.session.add(user)
+
+        user.set_password(password)
+        user.reset_failed_attempts()
+        db.session.commit()
+
+        action = "created" if created else "updated"
+        click.echo(f"Default admin {action}: {username}")
 
 
 def _schema_ready() -> bool:
