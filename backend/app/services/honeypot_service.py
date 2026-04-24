@@ -14,32 +14,32 @@ class HoneypotService:
     _SUPPORTED_TYPES = {"web"}
     _CATALOG = [
         {
-            "key": "web_portal",
-            "label": "企业门户镜像",
-            "description": "默认企业登录入口诱捕页",
+            "key": "cn_cms_portal",
+            "label": "中文政务 CMS 镜像",
+            "description": "仿中文政务信息公开与内容管理后台，包含栏目、附件上传、后台登录等高频探测入口",
             "honeypot_type": "web",
-            "image_name": "miragetrap/web-honeypot:latest",
-            "profile": "portal",
+            "image_name": "miragetrap/cn-cms-honeypot:latest",
+            "profile": "cms",
             "container_port": 80,
             "default_exposed_port": 18080,
         },
         {
-            "key": "web_search",
-            "label": "知识检索镜像",
-            "description": "突出搜索和检索场景的 Web 诱捕页",
+            "key": "cn_oa_portal",
+            "label": "中文 OA 办公镜像",
+            "description": "仿协同办公系统，提供登录、流程、通讯录、文档检索等中文业务诱捕面",
             "honeypot_type": "web",
-            "image_name": "miragetrap/web-honeypot:latest",
-            "profile": "search",
+            "image_name": "miragetrap/cn-oa-honeypot:latest",
+            "profile": "oa",
             "container_port": 80,
             "default_exposed_port": 18081,
         },
         {
-            "key": "web_admin",
-            "label": "运维后台镜像",
-            "description": "突出后台入口与管理界面的 Web 诱捕页",
+            "key": "cn_iot_gateway",
+            "label": "中文工控网关镜像",
+            "description": "仿设备运维与工控边缘网关，暴露控制台、设备资产、配置接口与日志导出入口",
             "honeypot_type": "web",
-            "image_name": "miragetrap/web-honeypot:latest",
-            "profile": "admin",
+            "image_name": "miragetrap/cn-iot-gateway-honeypot:latest",
+            "profile": "gateway",
             "container_port": 80,
             "default_exposed_port": 18082,
         },
@@ -133,17 +133,12 @@ class HoneypotService:
             runtime_status="stopped",
             runtime_meta={"catalog_label": image_spec["label"]},
         )
-        return self._serialize(item), None
+        data, error, _status_code = self._start_created_instance(item, image_spec)
+        if error:
+            return None, error
+        return data, None
 
-    def start_instance(self, instance_id: int) -> tuple[dict | None, str | None, int | None]:
-        item = self._honeypot_repository.get_by_id(instance_id)
-        if item is None:
-            return None, "蜜罐实例不存在", 404
-
-        image_spec = self._find_catalog_item(item.image_key)
-        if image_spec is None:
-            return None, "蜜罐镜像目录配置丢失", 422
-
+    def _start_created_instance(self, item: HoneypotInstance, image_spec: dict) -> tuple[dict | None, str | None, int | None]:
         try:
             runtime = self._runtime_adapter.start_instance(
                 item,
@@ -151,6 +146,7 @@ class HoneypotService:
                 self._control_plane_payload(),
             )
         except Exception as exc:  # noqa: BLE001
+            item.desired_state = "stopped"
             item.last_error = str(exc)
             self._honeypot_repository.save(item)
             return None, str(exc), 502
@@ -164,6 +160,17 @@ class HoneypotService:
         if startup_error:
             return None, startup_error, 502
         return self._serialize(item), None, None
+
+    def start_instance(self, instance_id: int) -> tuple[dict | None, str | None, int | None]:
+        item = self._honeypot_repository.get_by_id(instance_id)
+        if item is None:
+            return None, "蜜罐实例不存在", 404
+
+        image_spec = self._find_catalog_item(item.image_key)
+        if image_spec is None:
+            return None, "蜜罐镜像目录配置丢失", 422
+
+        return self._start_created_instance(item, image_spec)
 
     def stop_instance(self, instance_id: int) -> tuple[dict | None, str | None, int | None]:
         item = self._honeypot_repository.get_by_id(instance_id)
@@ -204,7 +211,7 @@ class HoneypotService:
         if honeypot_type not in self._SUPPORTED_TYPES:
             return None, "当前仅支持 web 蜜罐"
 
-        image_key = str(payload.get("image_key") or "web_portal").strip()
+        image_key = str(payload.get("image_key") or "cn_cms_portal").strip()
         image_spec = self._find_catalog_item(image_key) or self._CATALOG[0]
 
         item = self._honeypot_repository.get_by_honeypot_id(honeypot_id)
@@ -267,6 +274,10 @@ class HoneypotService:
             item.last_error = str(exc)
             item.last_runtime_sync_at = datetime.now(timezone.utc)
             return self._honeypot_repository.save(item)
+
+        if runtime.get("runtime_status") == "missing" and item.desired_state != "running":
+            runtime["runtime_status"] = "stopped"
+            runtime["last_error"] = None
 
         self._apply_runtime_payload(item, runtime, persist=False)
         return self._honeypot_repository.save(item)

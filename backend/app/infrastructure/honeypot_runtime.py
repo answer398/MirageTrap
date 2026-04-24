@@ -124,6 +124,7 @@ class DockerHoneypotRuntimeAdapter(HoneypotRuntimeAdapter):
         container = self._get_container(instance.container_name)
         environment = self._build_environment(instance, image_spec, control_plane)
         if container is None:
+            self._ensure_local_image(instance.image_name)
             container = self._run_container(instance, environment)
         else:
             container.reload()
@@ -254,6 +255,16 @@ class DockerHoneypotRuntimeAdapter(HoneypotRuntimeAdapter):
                     return self._client.containers.run(instance.image_name, **fallback_kwargs)
                 except self._docker.errors.APIError as fallback_exc:
                     raise RuntimeError(str(fallback_exc)) from fallback_exc
+            raise RuntimeError(str(exc)) from exc
+
+    def _ensure_local_image(self, image_name: str) -> None:
+        try:
+            self._client.images.get(image_name)
+        except self._docker.errors.ImageNotFound as exc:
+            raise RuntimeError(
+                f"本地缺少蜜罐镜像 {image_name}，请先执行 docker compose build honeypot-cms honeypot-oa honeypot-gateway"
+            ) from exc
+        except self._docker.errors.APIError as exc:
             raise RuntimeError(str(exc)) from exc
 
     def _should_recreate_container(self, container, instance: HoneypotInstance, expected_environment: dict) -> bool:

@@ -1183,6 +1183,24 @@
         </article>
       </div>
 
+      <div v-if="honeypotStartModalOpen" class="console-modal-layer honeypot-start-layer">
+        <article class="card console-modal honeypot-start-modal">
+          <header class="section-head attack-card-head">
+            <div>
+              <h2>蜜罐容器正在启动</h2>
+              <p class="section-note">正在创建 Docker 容器、等待服务心跳并同步运行状态，请稍候。</p>
+            </div>
+          </header>
+          <div class="honeypot-start-body">
+            <span class="honeypot-start-spinner" aria-hidden="true"></span>
+            <div>
+              <strong>{{ honeypotStartMessage }}</strong>
+              <p class="modal-copy">启动期间实例可能短暂显示为初始化状态，完成后会自动刷新列表。</p>
+            </div>
+          </div>
+        </article>
+      </div>
+
       <div
         v-if="attackExportModalOpen"
         class="console-modal-layer attack-export-layer"
@@ -1469,13 +1487,15 @@ export default {
       honeypotQuery: createDefaultHoneypotQuery(),
       honeypotForm: {
         name: "",
-        image_key: "web_portal",
+        image_key: "cn_cms_portal",
         exposed_port: 18080,
       },
       honeypotCreatePanelOpen: false,
       selectedHoneypotId: null,
       honeypotListLoading: false,
       honeypotBusy: false,
+      honeypotStartModalOpen: false,
+      honeypotStartMessage: "正在启动蜜罐实例...",
       honeypotErrorText: "",
       honeypotActionText: "",
     };
@@ -1831,6 +1851,9 @@ export default {
     attackExportModalOpen() {
       this.syncModalScrollLock();
     },
+    honeypotStartModalOpen() {
+      this.syncModalScrollLock();
+    },
     attackPayloadModalOpen() {
       this.syncModalScrollLock();
     },
@@ -1868,6 +1891,7 @@ export default {
         this.attackDetailModalOpen ||
         this.attackDeleteModalOpen ||
         this.attackPayloadModalOpen ||
+        this.honeypotStartModalOpen ||
         this.replayDetailModalOpen;
       const hasExportModalOpen = this.attackExportModalOpen;
       document.documentElement.style.overflow = hasModalOpen || hasExportModalOpen ? "hidden" : "";
@@ -3244,6 +3268,8 @@ export default {
         return;
       }
       this.honeypotBusy = true;
+      this.honeypotStartMessage = "正在创建并启动蜜罐实例...";
+      this.honeypotStartModalOpen = true;
       this.honeypotErrorText = "";
       this.honeypotActionText = "";
       try {
@@ -3256,30 +3282,36 @@ export default {
             exposed_port: this.honeypotForm.exposed_port,
           },
         });
-        this.honeypotActionText = `实例 ${created?.name || this.honeypotForm.name} 已创建`;
+        this.honeypotStartMessage = "创建成功，正在刷新实例状态...";
+        this.honeypotActionText = `实例 ${created?.name || this.honeypotForm.name} 已创建并启动`;
         this.honeypotForm.name = "";
         this.honeypotForm.exposed_port = this.selectedHoneypotCatalog?.default_exposed_port || 18080;
         await this.loadHoneypots();
         this.selectedHoneypotId = created?.id || this.selectedHoneypotId;
         this.honeypotCreatePanelOpen = false;
       } catch (error) {
-        this.honeypotErrorText = this.extractErrorMessage(error, "创建蜜罐失败");
+        this.honeypotErrorText = this.extractErrorMessage(error, "创建或启动蜜罐失败");
       } finally {
+        this.honeypotStartModalOpen = false;
         this.honeypotBusy = false;
       }
     },
     async startHoneypot(instanceId) {
       this.honeypotBusy = true;
+      this.honeypotStartMessage = "正在启动蜜罐实例...";
+      this.honeypotStartModalOpen = true;
       this.honeypotErrorText = "";
       this.honeypotActionText = "";
       try {
         const data = await this.request(`/api/honeypots/${instanceId}/start`, { method: "POST", body: {} });
+        this.honeypotStartMessage = "启动成功，正在刷新实例状态...";
         this.honeypotActionText = `实例 ${data?.name || `#${instanceId}`} 已启动`;
         await this.loadHoneypots();
         this.selectedHoneypotId = instanceId;
       } catch (error) {
         this.honeypotErrorText = this.extractErrorMessage(error, "启动蜜罐失败");
       } finally {
+        this.honeypotStartModalOpen = false;
         this.honeypotBusy = false;
       }
     },
@@ -5294,6 +5326,10 @@ input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
   z-index: 80;
 }
 
+.honeypot-start-layer {
+  z-index: 85;
+}
+
 .console-modal {
   width: min(100%, 1120px);
   margin: 0;
@@ -5310,6 +5346,34 @@ input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
   width: min(100%, 480px);
   display: grid;
   gap: 18px;
+}
+
+.honeypot-start-modal {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 18px;
+}
+
+.honeypot-start-body {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.honeypot-start-spinner {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 3px solid rgba(123, 215, 255, 0.22);
+  border-top-color: rgba(123, 215, 255, 0.95);
+  animation: honeypot-start-spin 0.8s linear infinite;
+}
+
+@keyframes honeypot-start-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .attack-payload-modal {

@@ -101,10 +101,10 @@ def _ensure_honeypot_instances_compatibility(*, inspector, dialect: str) -> None
             db.session.execute(text("UPDATE honeypot_instances SET type = 'web' WHERE type IS NULL"))
         if "image" in columns:
             db.session.execute(
-                text("ALTER TABLE honeypot_instances ALTER COLUMN image SET DEFAULT 'miragetrap/web-honeypot:latest'")
+                text("ALTER TABLE honeypot_instances ALTER COLUMN image SET DEFAULT 'miragetrap/cn-cms-honeypot:latest'")
             )
             db.session.execute(
-                text("UPDATE honeypot_instances SET image = 'miragetrap/web-honeypot:latest' WHERE image IS NULL")
+                text("UPDATE honeypot_instances SET image = 'miragetrap/cn-cms-honeypot:latest' WHERE image IS NULL")
             )
         if "status" in columns:
             db.session.execute(text("ALTER TABLE honeypot_instances ALTER COLUMN status SET DEFAULT 'stopped'"))
@@ -117,7 +117,7 @@ def _ensure_honeypot_instances_compatibility(*, inspector, dialect: str) -> None
     if statements or legacy_columns:
         id_text = "id::text" if dialect == "postgresql" else "CAST(id AS TEXT)"
         legacy_type_expr = "type" if "type" in columns else "'web'"
-        legacy_image_expr = "image" if "image" in columns else "'miragetrap/web-honeypot:latest'"
+        legacy_image_expr = "image" if "image" in columns else "'miragetrap/cn-cms-honeypot:latest'"
         legacy_status_expr = "status" if "status" in columns else "'stopped'"
         db.session.execute(
             text(
@@ -127,13 +127,13 @@ def _ensure_honeypot_instances_compatibility(*, inspector, dialect: str) -> None
                     honeypot_type = COALESCE(honeypot_type, {legacy_type_expr}, 'web'),
                     image_key = COALESCE(
                         image_key,
-                        CASE WHEN COALESCE({legacy_type_expr}, 'web') = 'web' THEN 'web_portal' ELSE COALESCE({legacy_type_expr}, 'web') || '_default' END
+                        CASE WHEN COALESCE({legacy_type_expr}, 'web') = 'web' THEN 'cn_cms_portal' ELSE COALESCE({legacy_type_expr}, 'web') || '_default' END
                     ),
-                    image_name = COALESCE(image_name, {legacy_image_expr}, 'miragetrap/web-honeypot:latest'),
+                    image_name = COALESCE(image_name, {legacy_image_expr}, 'miragetrap/cn-cms-honeypot:latest'),
                     container_name = COALESCE(container_name, 'legacy-honeypot-' || {id_text}),
                     bind_host = COALESCE(bind_host, '0.0.0.0'),
                     container_port = COALESCE(container_port, 80),
-                    honeypot_profile = COALESCE(honeypot_profile, 'portal'),
+                    honeypot_profile = COALESCE(honeypot_profile, 'cms'),
                     desired_state = COALESCE(
                         desired_state,
                         CASE WHEN COALESCE({legacy_status_expr}, 'stopped') IN ('running', 'online') THEN 'running' ELSE 'stopped' END

@@ -79,12 +79,12 @@ services:
       timeout: 5s
       retries: 5
 
-  honeypot-web:
-    image: miragetrap/web-honeypot:latest
+  honeypot-cms:
+    image: miragetrap/cn-cms-honeypot:latest
     build:
       context: .
-      dockerfile: honeypots/web/Dockerfile
-    container_name: honeypot-web
+      dockerfile: honeypots/chinese-web/cms/Dockerfile
+    container_name: honeypot-cms
     restart: unless-stopped
     environment:
       WEB_HONEYPOT_PORT: 80
@@ -92,13 +92,13 @@ services:
       HEARTBEAT_API_URL: ${HONEYPOT_CONTROLLER_PUBLIC_BASE_URL:-http://backend-api:15000}/api/honeypots/heartbeat
       INGEST_TOKEN: ${INGEST_TOKEN:-dev-ingest-token}
       HONEYPOT_CONTROL_TOKEN: ${HONEYPOT_CONTROL_TOKEN:-dev-ingest-token}
-      HONEYPOT_ID: ${WEB_HONEYPOT_ID:-hp-web-compose-001}
-      HONEYPOT_NAME: ${WEB_HONEYPOT_NAME:-web-bootstrap}
-      HONEYPOT_IMAGE_KEY: ${WEB_HONEYPOT_IMAGE_KEY:-web_portal}
-      HONEYPOT_IMAGE_NAME: ${WEB_HONEYPOT_IMAGE_NAME:-miragetrap/web-honeypot:latest}
-      HONEYPOT_CONTAINER_NAME: ${WEB_HONEYPOT_CONTAINER_NAME:-honeypot-web}
-      HONEYPOT_PROFILE: ${WEB_HONEYPOT_PROFILE:-portal}
-      HONEYPOT_EXPOSED_PORT: ${WEB_HONEYPOT_EXPOSED_PORT:-18080}
+      HONEYPOT_ID: ${CMS_HONEYPOT_ID:-hp-cn-cms-compose-001}
+      HONEYPOT_NAME: ${CMS_HONEYPOT_NAME:-中文政务CMS-bootstrap}
+      HONEYPOT_IMAGE_KEY: cn_cms_portal
+      HONEYPOT_IMAGE_NAME: miragetrap/cn-cms-honeypot:latest
+      HONEYPOT_CONTAINER_NAME: honeypot-cms
+      HONEYPOT_PROFILE: cms
+      HONEYPOT_EXPOSED_PORT: ${CMS_HONEYPOT_EXPOSED_PORT:-18080}
       HEARTBEAT_INTERVAL_SECONDS: ${HONEYPOT_HEARTBEAT_INTERVAL_SECONDS:-15}
       WEB_HONEYPOT_MAX_BODY: ${WEB_HONEYPOT_MAX_BODY:-4096}
     depends_on:
@@ -107,7 +107,67 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${HOST_WEB_HONEYPOT_PORT:-18080}:80"
+      - "${HOST_CMS_HONEYPOT_PORT:-18080}:80"
+
+  honeypot-oa:
+    image: miragetrap/cn-oa-honeypot:latest
+    build:
+      context: .
+      dockerfile: honeypots/chinese-web/oa/Dockerfile
+    container_name: honeypot-oa
+    restart: unless-stopped
+    environment:
+      WEB_HONEYPOT_PORT: 80
+      INGEST_API_URL: ${HONEYPOT_CONTROLLER_PUBLIC_BASE_URL:-http://backend-api:15000}/api/ingest/events
+      HEARTBEAT_API_URL: ${HONEYPOT_CONTROLLER_PUBLIC_BASE_URL:-http://backend-api:15000}/api/honeypots/heartbeat
+      INGEST_TOKEN: ${INGEST_TOKEN:-dev-ingest-token}
+      HONEYPOT_CONTROL_TOKEN: ${HONEYPOT_CONTROL_TOKEN:-dev-ingest-token}
+      HONEYPOT_ID: ${OA_HONEYPOT_ID:-hp-cn-oa-compose-001}
+      HONEYPOT_NAME: ${OA_HONEYPOT_NAME:-中文OA办公-bootstrap}
+      HONEYPOT_IMAGE_KEY: cn_oa_portal
+      HONEYPOT_IMAGE_NAME: miragetrap/cn-oa-honeypot:latest
+      HONEYPOT_CONTAINER_NAME: honeypot-oa
+      HONEYPOT_PROFILE: oa
+      HONEYPOT_EXPOSED_PORT: ${OA_HONEYPOT_EXPOSED_PORT:-18081}
+      HEARTBEAT_INTERVAL_SECONDS: ${HONEYPOT_HEARTBEAT_INTERVAL_SECONDS:-15}
+      WEB_HONEYPOT_MAX_BODY: ${WEB_HONEYPOT_MAX_BODY:-4096}
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HOST_OA_HONEYPOT_PORT:-18081}:80"
+
+  honeypot-gateway:
+    image: miragetrap/cn-iot-gateway-honeypot:latest
+    build:
+      context: .
+      dockerfile: honeypots/chinese-web/gateway/Dockerfile
+    container_name: honeypot-gateway
+    restart: unless-stopped
+    environment:
+      WEB_HONEYPOT_PORT: 80
+      INGEST_API_URL: ${HONEYPOT_CONTROLLER_PUBLIC_BASE_URL:-http://backend-api:15000}/api/ingest/events
+      HEARTBEAT_API_URL: ${HONEYPOT_CONTROLLER_PUBLIC_BASE_URL:-http://backend-api:15000}/api/honeypots/heartbeat
+      INGEST_TOKEN: ${INGEST_TOKEN:-dev-ingest-token}
+      HONEYPOT_CONTROL_TOKEN: ${HONEYPOT_CONTROL_TOKEN:-dev-ingest-token}
+      HONEYPOT_ID: ${GATEWAY_HONEYPOT_ID:-hp-cn-gateway-compose-001}
+      HONEYPOT_NAME: ${GATEWAY_HONEYPOT_NAME:-中文工控网关-bootstrap}
+      HONEYPOT_IMAGE_KEY: cn_iot_gateway
+      HONEYPOT_IMAGE_NAME: miragetrap/cn-iot-gateway-honeypot:latest
+      HONEYPOT_CONTAINER_NAME: honeypot-gateway
+      HONEYPOT_PROFILE: gateway
+      HONEYPOT_EXPOSED_PORT: ${GATEWAY_HONEYPOT_EXPOSED_PORT:-18082}
+      HEARTBEAT_INTERVAL_SECONDS: ${HONEYPOT_HEARTBEAT_INTERVAL_SECONDS:-15}
+      WEB_HONEYPOT_MAX_BODY: ${WEB_HONEYPOT_MAX_BODY:-4096}
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HOST_GATEWAY_HONEYPOT_PORT:-18082}:80"
 
 volumes:
   postgres_data:
