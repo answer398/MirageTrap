@@ -559,7 +559,7 @@
                     </span>
                   </div>
                   <div class="action-cluster">
-                    <button class="btn mini" type="button" @click="downloadFile(item.id)">下载</button>
+                    <button class="btn mini" type="button" @click="downloadFile(item)">下载</button>
                     <button
                       class="btn ghost mini"
                       type="button"
@@ -842,7 +842,7 @@
                   >
                     停止
                   </button>
-                  <button class="btn ghost mini" type="button" :disabled="honeypotBusy" @click="loadHoneypots">
+                  <button class="btn ghost mini" type="button" :disabled="honeypotBusy" @click="refreshHoneypotStatus">
                     刷新状态
                   </button>
                   <button
@@ -1138,7 +1138,7 @@
                         </span>
                       </div>
                       <div class="action-cluster">
-                        <button class="btn mini" type="button" @click="downloadFile(item.id)">下载</button>
+                        <button class="btn mini" type="button" @click="downloadFile(item)">下载</button>
                         <button
                           class="btn ghost mini"
                           type="button"
@@ -1187,15 +1187,15 @@
         <article class="card console-modal honeypot-start-modal">
           <header class="section-head attack-card-head">
             <div>
-              <h2>蜜罐容器正在启动</h2>
-              <p class="section-note">正在创建 Docker 容器、等待服务心跳并同步运行状态，请稍候。</p>
+              <h2>{{ honeypotStartTitle }}</h2>
+              <p class="section-note">{{ honeypotStartNote }}</p>
             </div>
           </header>
           <div class="honeypot-start-body">
             <span class="honeypot-start-spinner" aria-hidden="true"></span>
             <div>
               <strong>{{ honeypotStartMessage }}</strong>
-              <p class="modal-copy">启动期间实例可能短暂显示为初始化状态，完成后会自动刷新列表。</p>
+              <p class="modal-copy">{{ honeypotStartCopy }}</p>
             </div>
           </div>
         </article>
@@ -1495,7 +1495,10 @@ export default {
       honeypotListLoading: false,
       honeypotBusy: false,
       honeypotStartModalOpen: false,
+      honeypotStartTitle: "蜜罐容器正在启动",
+      honeypotStartNote: "正在创建 Docker 容器、等待服务心跳并同步运行状态，请稍候。",
       honeypotStartMessage: "正在启动蜜罐实例...",
+      honeypotStartCopy: "启动期间实例可能短暂显示为初始化状态，完成后会自动刷新列表。",
       honeypotErrorText: "",
       honeypotActionText: "",
     };
@@ -2839,7 +2842,7 @@ export default {
         query: { format },
       });
       if (data.file?.id) {
-        await this.downloadFile(data.file.id);
+        await this.downloadFile(data.file);
       }
       this.attackSessionEvidence = await this.request(`/api/evidence/${encodeURIComponent(this.activeAttackSessionId)}`);
     },
@@ -2990,7 +2993,7 @@ export default {
           query: { format },
         });
         if (data.file?.id) {
-          await this.downloadFile(data.file.id);
+          await this.downloadFile(data.file);
         }
         this.evidenceData = await this.request(`/api/evidence/${encodeURIComponent(this.replaySessionId)}`);
       } catch (error) {
@@ -3054,7 +3057,8 @@ export default {
         this.evidenceVerifyLoadingMap = nextLoading;
       }
     },
-    async downloadFile(fileId) {
+    async downloadFile(file) {
+      const fileId = file && typeof file === "object" ? file.id : file;
       const result = await requestBlob({
         apiBase: this.apiBase,
         token: this.token,
@@ -3063,15 +3067,34 @@ export default {
       const url = window.URL.createObjectURL(result.blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = this.resolveFilename(result.contentDisposition, `evidence-${fileId}`);
+      anchor.download = this.resolveFilename(
+        result.contentDisposition,
+        this.fallbackEvidenceFilename(file),
+      );
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
     },
     resolveFilename(contentDisposition, fallback) {
-      const match = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition || "");
+      const header = contentDisposition || "";
+      const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(header);
+      if (encodedMatch?.[1]) {
+        return decodeURIComponent(encodedMatch[1]);
+      }
+      const match = /filename=\"?([^\";]+)\"?/i.exec(header);
       return match?.[1] || fallback;
+    },
+    fallbackEvidenceFilename(file) {
+      const item = file && typeof file === "object" ? file : null;
+      const fileId = item?.id || file;
+      const downloadName = String(item?.extra_data?.download_name || "").trim();
+      if (downloadName) {
+        return downloadName;
+      }
+      const format = String(item?.extra_data?.format || item?.file_type || "").toLowerCase();
+      const ext = format.includes("pcap") ? "pcap" : format.includes("json") ? "json" : "bin";
+      return `evidence-${fileId}.${ext}`;
     },
     extractErrorMessage(error, fallback) {
       return error?.message || fallback;
@@ -3177,6 +3200,13 @@ export default {
       }
       return String(item.runtime_status || "").toLowerCase() === "running";
     },
+    showHoneypotOperationModal({ title, note, message, copy }) {
+      this.honeypotStartTitle = title;
+      this.honeypotStartNote = note;
+      this.honeypotStartMessage = message;
+      this.honeypotStartCopy = copy;
+      this.honeypotStartModalOpen = true;
+    },
     async toggleHoneypotCreatePanel() {
       const nextOpen = !this.honeypotCreatePanelOpen;
       if (nextOpen && !(this.honeypotCatalog.items || []).length) {
@@ -3268,8 +3298,12 @@ export default {
         return;
       }
       this.honeypotBusy = true;
-      this.honeypotStartMessage = "正在创建并启动蜜罐实例...";
-      this.honeypotStartModalOpen = true;
+      this.showHoneypotOperationModal({
+        title: "蜜罐容器正在启动",
+        note: "正在创建 Docker 容器、等待服务心跳并同步运行状态，请稍候。",
+        message: "正在创建并启动蜜罐实例...",
+        copy: "启动期间实例可能短暂显示为初始化状态，完成后会自动刷新列表。",
+      });
       this.honeypotErrorText = "";
       this.honeypotActionText = "";
       try {
@@ -3298,8 +3332,12 @@ export default {
     },
     async startHoneypot(instanceId) {
       this.honeypotBusy = true;
-      this.honeypotStartMessage = "正在启动蜜罐实例...";
-      this.honeypotStartModalOpen = true;
+      this.showHoneypotOperationModal({
+        title: "蜜罐容器正在启动",
+        note: "正在启动 Docker 容器、等待服务心跳并同步运行状态，请稍候。",
+        message: "正在启动蜜罐实例...",
+        copy: "启动期间实例可能短暂显示为初始化状态，完成后会自动刷新列表。",
+      });
       this.honeypotErrorText = "";
       this.honeypotActionText = "";
       try {
@@ -3317,16 +3355,44 @@ export default {
     },
     async stopHoneypot(instanceId) {
       this.honeypotBusy = true;
+      this.showHoneypotOperationModal({
+        title: "蜜罐容器正在停止",
+        note: "正在停止 Docker 容器并同步运行状态，请稍候。",
+        message: "正在停止蜜罐实例...",
+        copy: "停止期间实例状态会在操作完成后自动刷新。",
+      });
       this.honeypotErrorText = "";
       this.honeypotActionText = "";
       try {
         const data = await this.request(`/api/honeypots/${instanceId}/stop`, { method: "POST", body: {} });
+        this.honeypotStartMessage = "停止成功，正在刷新实例状态...";
         this.honeypotActionText = `实例 ${data?.name || `#${instanceId}`} 已停止`;
         await this.loadHoneypots();
         this.selectedHoneypotId = instanceId;
       } catch (error) {
         this.honeypotErrorText = this.extractErrorMessage(error, "停止蜜罐失败");
       } finally {
+        this.honeypotStartModalOpen = false;
+        this.honeypotBusy = false;
+      }
+    },
+    async refreshHoneypotStatus() {
+      this.honeypotBusy = true;
+      this.showHoneypotOperationModal({
+        title: "蜜罐容器正在刷新状态",
+        note: "正在同步蜜罐实例列表、容器运行状态和心跳信息，请稍候。",
+        message: "正在刷新蜜罐实例状态...",
+        copy: "刷新完成后会更新当前实例详情与列表状态。",
+      });
+      this.honeypotErrorText = "";
+      this.honeypotActionText = "";
+      try {
+        await this.loadHoneypots();
+        this.honeypotActionText = "蜜罐实例状态已刷新";
+      } catch (error) {
+        this.honeypotErrorText = this.extractErrorMessage(error, "刷新蜜罐状态失败");
+      } finally {
+        this.honeypotStartModalOpen = false;
         this.honeypotBusy = false;
       }
     },

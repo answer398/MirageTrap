@@ -102,6 +102,7 @@ def _configure_cors(app: Flask) -> None:
         response.headers["Access-Control-Allow-Origin"] = "*" if allow_all else origin
         response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Ingest-Token"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Expose-Headers"] = "Content-Disposition, Content-Type"
         response.headers["Access-Control-Max-Age"] = "3600"
         response.headers["Vary"] = "Origin"
         return response
